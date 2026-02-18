@@ -1,0 +1,72 @@
+[*]
+[*] GTKWave Analyzer v3.3.100 (w)1999-2019 BSI
+[*] Tue Feb 04 13:56:00 2026
+[*]
+[dumpfile] "/home/mnalewajski/dev/ebaz4205/hdl/library/usb_hid_host_dual/tb/dump.vcd"
+[savefile] "/home/mnalewajski/dev/ebaz4205/hdl/library/usb_hid_host_dual/tb/dump.gtkw"
+[timestart] 0
+[size] 1920 1080
+[pos] -1 -1
+*-13.000000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] usb_hid_host_tb_top.
+[sst_width] 250
+[signals_width] 250
+[sst_expanded] 1
+[sst_vpaned_height] 300
+@28
+usb_hid_host_tb_top.clk
+usb_hid_host_tb_top.reset
+usb_hid_host_tb_top.cs
+@200
+-USB Signals
+@28
+usb_hid_host_tb_top.usb_dm_i
+usb_hid_host_tb_top.usb_dp_i
+usb_hid_host_tb_top.usb_dm_o
+usb_hid_host_tb_top.usb_dp_o
+usb_hid_host_tb_top.usb_oe
+@200
+-Status
+@22
+usb_hid_host_tb_top.typ[1:0]
+@28
+usb_hid_host_tb_top.conerr
+usb_hid_host_tb_top.busy
+usb_hid_host_tb_top.full_report
+@200
+-Debug
+@22
+usb_hid_host_tb_top.dbg_hid_report[63:0]
+usb_hid_host_tb_top.dbg_hid_regs[63:0]
+@200
+-ROM Interface
+@22
+usb_hid_host_tb_top.rom_addr[9:0]
+usb_hid_host_tb_top.rom_dout[3:0]
+usb_hid_host_tb_top.rom_en
+@200
+-Internal State
+@22
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.pc[9:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.pc_next[9:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.wpc[0][9:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.wpc[1][9:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.insth[3:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.wk[7:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.bitadr[7:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.ukpdat[7:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.ukprdy
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.rcvct[4:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.addra[3:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.addrb[4:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.load_data[7:0]
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.timing[2:0]
+@28
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.ukprdy
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.ukpstb
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.ukpstart
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.nak
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.save
+usb_hid_host_tb_top.usb_hid_host_inst.ukp.load
+[pattern_trace] 1
+[pattern_trace] 0
