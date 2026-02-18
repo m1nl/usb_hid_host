@@ -83,6 +83,8 @@ In Xilinx directory you can find version of the core utilizing two USB ports and
 
 You can find a very crude testbench in `tb/` directory. It's purpose is to generate `dump.vcd` file to be viewed with gtkwave in order to check if the USB enumeration succeeds - I used it mainly for UKP microcode development. There are no tests, which validate the core itself. PRs are welcome :)
 
+![vcd file viewed with gtkwave](doc/gtkwave_usb.png?raw=true "vcd file viewed with gtkwave")
+
 ## The Microcode Processor (UKP)
 
 * Each instruction has a 4-bit OP code (except for BX instructions have additonal nibble for branch condition) and 0-3 4-bit operands.
@@ -113,8 +115,8 @@ You can find a very crude testbench in `tb/` directory. It's purpose is to gener
 | F      | JMP         | Jump to address without saving return address |
 | 9 0    | BE          | Jump to address when D+ and D- are both 0 or 1, or line error condition when connected; set full-speed mode if D+ is high otherwise |
 | 9 1    | BC          | Jump to address when connected |
-| 9 2    | BNAK        | Jump to address when previous IN transcation returned NAK |
-| 9 3    | BSTALL      | Jump to address when previous IN transcation returned STALL |
+| 9 2    | BNAK        | Jump to address when previous IN transaction returned NAK |
+| 9 3    | BSTALL      | Jump to address when previous IN transaction returned STALL |
 | 9 4    | BNZ         | Jump to address when W register is 0 |
 | 9 5    | BNF         | Jump to address when device is not full-speed |
 
