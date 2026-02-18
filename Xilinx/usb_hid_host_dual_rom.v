@@ -18,7 +18,7 @@
 
 `default_nettype none
 `timescale 1ns / 1ps
-module usb_hid_host_rom(
+module usb_hid_host_dual_rom(
   input  wire       clk,
 
   input  wire [9:0] addra,
