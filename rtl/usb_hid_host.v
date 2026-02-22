@@ -100,6 +100,8 @@ ukp #(
 );
 
 reg [7:0] in_polling [0:1];  // USB IN request payload data for endpoint specific to a given VID
+reg       x_input;           // indicates if pad should be polled in X-Input mode
+
 reg [7:0] dat [0:17];        // data in last response (up to 18 bytes to address entire GET_DESCRIPTOR response)
 reg [7:0] regs [0:7];        // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL)
 reg [4:0] rcvct;
@@ -131,6 +133,8 @@ always @(posedge clk) begin
       load_data <= in_polling[0];
     else if (addra == 9)
       load_data <= in_polling[1];
+    else if (addra == 10)
+      load_data <= x_input ? 8'b1 : 8'b0;
   end
 end
 
@@ -164,15 +168,14 @@ always @(posedge clk) begin
   end else begin
     ukprdy_r    <= ukprdy;
     full_report <= 0;
-
-    typ <= typ_next;
+    typ         <= connected ? typ_next : 0;
 
     if (ukprdy_r) begin  // individual packet received
       rcvct       <= rcvct - 2;   // ignore CRC16
       full_report <= (typ != 0);  // strobe when connected
     end
 
-    if (typ != typ_next) begin
+    if (connected && typ != typ_next) begin
       for (j = 0; j < 18; j = j + 1)
         dat[j] <= 8'b0;
 
@@ -183,19 +186,24 @@ end
 
 always @(*) begin
   typ_next = 0;
+  x_input  = 0;
 
-  if (connected && regs[4] == 3) begin    // bInterfaceClass     3: HID, other: non-HID
-    if (regs[5] == 1)                     // bInterfaceSubClass  1: Boot device
-      typ_next = (regs[6] == 1) ? 1 : 2;  // bInterfaceProtocol  1: keyboard, 2: mouse
-    else
+  casez ({regs[4], regs[5], regs[6]})  // INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL
+    {8'h03, 8'h01, 8'h01}: typ_next = 1;  // keyboard
+    {8'h03, 8'h01, 8'hzz}: typ_next = 2;  // mouse
+    {8'h03, 8'hzz, 8'hzz}: typ_next = 3;  // other (incl. 8BitDo, D-Input)
+    {8'hff, 8'h5d, 8'h01},
+    {8'hff, 8'h5d, 8'h81}: begin
       typ_next = 3;
-  end
+      x_input  = 1;
+    end  // Xbox 360 (incl. 8BitDo, X-Input); wired - protocol 1, wireless - protocol 129
+  endcase
 end
 
 always @(*) begin
   // set in_polling payload depending on vid (https://rayslogic.com/Propeller/USB.htm#USB%20Token)
   case (vid)
-    16'h2dc8: begin  // 8bitdo
+    16'h2dc8: begin  // 8BitDo
       in_polling[0] = 8'h01;  // poll endpoint 4 (01 ba)
       in_polling[1] = 8'hba;
     end
@@ -209,10 +217,11 @@ end
 reg [2:0] hat;
 
 always @(*) begin
-  {key_modifiers, key_0, key_1, key_2, key_3} = {8'b0, 8'b0, 8'b0, 8'b0, 8'b0};
-  {mouse_btn, mouse_dx, mouse_dy} = {3'b0, 8'b0, 8'b0};
-  {game_l, game_r, game_u, game_d} = 4'b0;
-  {game_y, game_x, game_b, game_a, game_sel, game_sta} = 6'b0;
+  {key_modifiers, key_0, key_1, key_2, key_3} = {8'h00, 8'h00, 8'h00, 8'h00, 8'h00};
+  {mouse_btn, mouse_dx, mouse_dy} = {3'b000, 8'h00, 8'h00};
+  {game_l, game_r, game_u, game_d} = {1'b0, 1'b0, 1'b0, 1'b0};
+  {game_y, game_x, game_b, game_a} = {1'b0, 1'b0, 1'b0, 1'b0};
+  {game_sel, game_sta} = {1'b0, 1'b0};
 
   if (typ == 1) begin
     {key_modifiers, key_0, key_1, key_2, key_3} = {dat[0], dat[2], dat[3], dat[4], dat[5]};
@@ -221,10 +230,11 @@ always @(*) begin
     {mouse_btn, mouse_dx, mouse_dy} = {dat[0][2:0], dat[1], dat[2]};
 
   end else if (typ == 3) begin
-    case (vid)
-      16'h2dc8: begin  // 8bitdo
-        {game_y, game_x, game_b, game_a} = {dat[1][4:3], dat[1][1:0]};
-        {game_sel, game_sta} = {dat[2][2], dat[2][3]};  // - +
+    casez ({x_input, vid, pid})
+      {1'bz, 16'h2dc8, 16'h301c}: ;  // 8BitDo, idle
+      {1'b0, 16'h2dc8, 16'hzzzz}: begin  // 8BitDo, assume generic D-Input
+        {game_y, game_x, game_b, game_a} = {dat[1][4:3], dat[1][1:0]};  // buttons
+        {game_sel, game_sta} = {dat[2][2], dat[2][3]};                  // - +
 
         if (dat[3][3:0] != 4'hf) begin
           hat = dat[3][2:0];  // circular pattern
@@ -240,9 +250,20 @@ always @(*) begin
         game_a = game_a || dat[2][0];  // lt
         game_b = game_b || dat[2][1];  // rt
       end
-      16'h040b, 16'h0738: begin  // speedlink competition pro
-        {game_a, game_b} = {dat[0][1:0]};
-        {game_x, game_y} = {dat[0][4:3]};
+      {1'b1, 16'hzzzz, 16'hzzzz}: begin // Xbox 360 - compatible (X-Input)
+        {game_y, game_x, game_b, game_a} = dat[3][7:4];  // buttons
+        {game_sel, game_sta} = {dat[2][5], dat[2][4]};   // - +
+
+        {game_r, game_l, game_d, game_u} = {dat[2][3:0]}; // d-pad
+
+        game_d = game_d || dat[3][0];  // lb
+        game_u = game_u || dat[3][1];  // rb
+
+        game_a = game_a || (|dat[4]);  // lt
+        game_b = game_b || (|dat[5]);  // rt
+      end
+      {1'b0, 16'h0738, 16'h2217}: begin  // SpeedLink COMPETITION PRO Extra
+        {game_y, game_x, game_b, game_a} = {dat[0][2], dat[0][0], dat[0][3], dat[0][1]};
 
         {game_l, game_r} = {dat[1][7:6] == 2'b00, dat[1][7:6] == 2'b11};
         {game_u, game_d} = {dat[2][7:6] == 2'b00, dat[2][7:6] == 2'b11};
@@ -308,18 +329,18 @@ localparam S_BX     = 5;
 localparam S_B0     = 6;
 localparam S_B1     = 7;
 localparam S_B2     = 8;
-localparam S_HIZ0   = 9;
-localparam S_OUT0   = 10;
-localparam S_RX0    = 11;
-localparam S_RX1    = 12;
-localparam S_TXR0   = 13;
-localparam S_TXR1   = 14;
-localparam S_TXR2   = 15;
-localparam S_TX0    = 16;
-localparam S_TX1    = 17;
-localparam S_TX2    = 18;
-localparam S_SAVE0  = 19;
-localparam S_SAVE1  = 20;
+localparam S_HIZ    = 9;
+localparam S_RX0    = 10;
+localparam S_RX1    = 11;
+localparam S_TXR0   = 12;
+localparam S_TX0    = 13;
+localparam S_TX1    = 14;
+localparam S_TX2    = 15;
+localparam S_SAVE0  = 16;
+localparam S_SAVE1  = 17;
+localparam S_LOAD0  = 18;
+localparam S_LOAD1  = 19;
+localparam S_LOAD2  = 20;
 
 wire [3:0] inst;
 wire       polarity;
@@ -363,7 +384,7 @@ assign usb_dp_o = up;
 assign usb_dm_o = um;
 assign usb_oe   = ug;
 
-assign connerr = (&conct) && di;
+assign connerr = (&conct) && (di || connected);
 
 // register inputs
 always @(posedge clk) begin
@@ -379,12 +400,13 @@ assign inst     = rom_dout;
 assign rom_addr = pc_next;
 assign rom_en   = state_next != S_SYNC &&
                   state_next != S_WAIT &&
-                  state_next != S_HIZ0 &&
-                  state_next != S_OUT0 &&
+                  state_next != S_HIZ &&
                   state_next != S_RX0 &&
                   state_next != S_RX1 &&
-                  state_next != S_TXR2 &&
-                  state_next != S_TX2;
+                  state_next != S_TXR0 &&
+                  state_next != S_TX2 &&
+                  state_next != S_LOAD1 &&
+                  state_next != S_LOAD2;
 
 assign timing_0 = timing == 0 && prescaler == 0;
 assign timing_1 = timing == 1 && prescaler == 0;
@@ -408,7 +430,9 @@ always @(*) begin
     2: cond = nak;  // op=BNAK
     3: cond = stall;  // op=BSTALL
     4: cond = wk > 0;  // op=BNZ
-    5: cond = !full_speed;  // op=BNF
+    5: cond = wk == 0;  // op=BZ
+    6: cond = !full_speed;  // op=BNF
+    7: cond = 1;  // op=BJMP
     default: cond = 0;
   endcase
 end
@@ -436,19 +460,19 @@ always @(*) begin
           1: state_next = S_LDI0;  // op=LDI
           2: ;  // op=START
           3: state_next = S_TX0;  // op=OUT4
-          4: begin
-            state_next = S_OUT0;
-            pc_next    = pc;
-          end  // op=OUT0
+          4: ;
           5: begin
-            state_next = S_HIZ0;
+            state_next = S_HIZ;
             pc_next    = pc;
           end  // op=HIZ
           6: state_next = S_TX0;  // op=OUTB
           7: pc_next = wpc[0];  // op=RET
           8: state_next = S_B0;  // op=CALL
           9: state_next = S_BX;  // op=BX
-          10: state_next = S_TXR0;  // op=OUTR
+          10: begin
+            state_next = S_TXR0;
+            pc_next    = pc;
+          end  // op=OUTR
           11: ;  // op=DEC
           12: state_next = S_SAVE0;  // op=SAVE
           13: begin
@@ -459,7 +483,7 @@ always @(*) begin
             state_next = S_WAIT;
             pc_next    = pc;
           end  // op=WAIT
-          15: state_next = S_B0;  // op=JMP
+          15: state_next = S_LOAD0;  // op=LOAD
           default: ;
         endcase
       end
@@ -496,12 +520,7 @@ always @(*) begin
         else
           pc_next = pc;
       end
-      S_HIZ0: begin
-        pc_next = pc;
-        if (timing_0)
-          state_next = S_SYNC;
-      end
-      S_OUT0: begin
+      S_HIZ: begin
         pc_next = pc;
         if (timing_0)
           state_next = S_SYNC;
@@ -512,12 +531,7 @@ always @(*) begin
         else
           pc_next = pc;
       end
-      S_TXR0: state_next = S_TXR1;
-      S_TXR1: begin
-        state_next = S_TXR2;
-        pc_next = pc;
-      end
-      S_TXR2: begin
+      S_TXR0: begin
         state_next = S_TX2;
         pc_next = pc;
       end
@@ -534,6 +548,15 @@ always @(*) begin
       end
       S_SAVE0: state_next = S_SAVE1;
       S_SAVE1: state_next = S_OPCODE;
+      S_LOAD0: begin
+        state_next = S_LOAD1;
+        pc_next = pc;
+      end
+      S_LOAD1: begin
+        state_next = S_LOAD2;
+        pc_next = pc;
+      end
+      S_LOAD2: state_next = S_OPCODE;
       default: state_next = S_OPCODE;
     endcase
   end
@@ -603,7 +626,7 @@ always @(posedge clk) begin
           3: begin
             sadr <= 3;
           end  // op=OUT4
-          4: ;  // op=OUT0
+          4: ;
           5: ;  // op=HIZ
           6: begin
             sadr <= 7;
@@ -628,7 +651,7 @@ always @(posedge clk) begin
             dis <= di;
           end  // op=IN
           14: ;  // op=WAIT
-          15: ;  // op=JMP
+          15: ;  // op=LOAD
           default: ;
         endcase
       end
@@ -656,16 +679,9 @@ always @(posedge clk) begin
         lb4 <= inst;
       end
       S_B1: ;
-      S_HIZ0: begin
+      S_HIZ: begin
         if (timing_0) begin
           ug <= 0;
-        end
-      end
-      S_OUT0: begin
-        if (timing_0) begin
-          ug <= 1;
-          up <= 0;
-          um <= 0;
         end
       end
       S_RX0: begin
@@ -689,13 +705,8 @@ always @(posedge clk) begin
         end
       end
       S_TXR0: begin
-        addra <= inst;
-        load  <= 1;
-        eot   <= 0;
-      end
-      S_TXR1: ;
-      S_TXR2: begin
-        sb  <= load_data;
+        sb  <= wk;
+        eot <= 0;
       end
       S_TX0: begin
         sb[3:0] <= inst;
@@ -716,6 +727,14 @@ always @(posedge clk) begin
           conct     <= 0;
         end else
           save <= 1;
+      end
+      S_LOAD0: begin
+        addra <= inst;
+        load  <= 1;
+      end
+      S_LOAD1: ;
+      S_LOAD2: begin
+        wk <= load_data;
       end
       default: ;
     endcase

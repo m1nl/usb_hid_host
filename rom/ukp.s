@@ -24,7 +24,7 @@ cstart:
 ; ---- set interrupt transfer interval
     bnf long_interval
     ldi 5
-    jmp cstart2
+    bjmp cstart2
 long_interval:
     ldi 10
 cstart2:
@@ -125,7 +125,11 @@ wait_set_config:
     bnak wait_set_config
     call sendack
 
-; SET_IDLE (0, 1)
+; skip HID initialization for Xbox 360-compatbile controllers
+    load 10
+    bnz xinput_init
+
+; SET_IDLE (1, 0)
     wait
     call sof
     call setup10
@@ -141,9 +145,9 @@ wait_set_idle:
     bstall set_idle_ready
     bnak wait_set_idle
     call sendack
-
-; GET_DESCRIPTOR (HID, 1)
 set_idle_ready:
+
+; GET_DESCRIPTOR (HID, 1, 0)
     wait
     call sof
     call setup10
@@ -162,11 +166,47 @@ wait_get_hid_report:
     bnak wait_get_hid_report
     call sendack
     bnz wait_get_hid_report
+get_hid_report_ready:
+    bjmp init_finished
+
+xinput_init:
+; huge thanks to Jakob
+; ref: https://jakob.space/blog/sorry-guys-i-have-to-troubleshoot-my-usb-drivers-before-i-can-play.html
+; XINPUT_LED (1)
+    wait
+    call sof
+    call out15
+    call xinput_led
+    call rcvdt
+
+; some third-party controllers Xbox 360-style controllers
+; require this message to finish initialization
+; ref: linux/drivers/input/joystick/xpad.c
+; XINPUT_INIT (1)
+    wait
+    call sof
+    call setup10
+    call xinput_magic
+    call rcvdt
+    ldi 160               ; receive 20 bytes of data from device
+    start                 ; mark start of read transaction
+
+; IN(1,0), ACK() - read but ignore contents
+wait_xinput_magic:
+    wait
+    call sof
+    call in10
+    call rcvdt2
+    bstall xinput_magic_ready
+    bnak wait_xinput_magic
+    call sendack
+    bnz wait_xinput_magic
+xinput_magic_ready:
 
 ; ---- initialization finished
-get_hid_report_ready:
+init_finished:
     save 15 1             ; connected
-    jmp cstart
+    bjmp cstart
 
 ; ---- interrupt polling
 connected:
@@ -178,16 +218,16 @@ connected:
     call rcvdt
     bnak cstart
     call sendack
-    jmp cstart
+    bjmp cstart
 
 ; ---- disconnect and jump start
 connerr:
     save 15 0             ; disconnected
-    jmp cstart
+    bjmp cstart
 
 ; ---- subroutines
 reset:
-    out0
+    out4 0x00
 
 ; ---- wait 20ms
     ldi 20
@@ -209,13 +249,13 @@ w40ms:
 get_device:               ; get device descriptor of (0,0)
     outb 0x80             ; SYNC
     outb 0xc3             ; PID=DATA0
-    outb 0x80             ; bmRequestType: 80
-    outb 0x06             ; bRequest=6 Get_Descriptor
-    outb 0x00             ; Desc Index: 0
-    outb 0x01             ; Desc Type: 1 device
-    outb 0x00             ; Language ID: 0
+    outb 0x80             ; bmRequestType=80
+    outb 0x06             ; bRequest=6 (Get_Descriptor)
+    outb 0x00             ; Desc Index=0
+    outb 0x01             ; Desc Type=1 (device)
+    outb 0x00             ; Language ID=0
     outb 0x00             ;
-    outb 0x12             ; wLength = 18
+    outb 0x12             ; wLength=18
     outb 0x00
     outb 0xe0             ; CRC16
     outb 0xf4
@@ -226,13 +266,13 @@ get_device:               ; get device descriptor of (0,0)
 get_config:               ; get config descriptor of (0,0)
     outb 0x80             ; SYNC
     outb 0xc3             ; PID=DATA0
-    outb 0x80             ; bmRequestType: 0
-    outb 0x06             ; bRequest=6 Get_Descriptor
-    outb 0x00             ; Desc Index: 0
-    outb 0x02             ; Desc Type: 2 configuration
-    outb 0x00             ; Language ID: 0
+    outb 0x80             ; bmRequestType=0
+    outb 0x06             ; bRequest=6 (Get_Descriptor)
+    outb 0x00             ; Desc Index=0
+    outb 0x02             ; Desc Type=2 (configuration)
+    outb 0x00             ; Language ID=0
     outb 0x00             ;
-    outb 0x12             ; wLength = 18
+    outb 0x12             ; wLength=18
     outb 0x00
     outb 0xa4             ; CRC16
     outb 0xf4
@@ -275,35 +315,64 @@ set_config:               ; set active configuration of device 1 to 1 (default c
     ret
 
 set_idle:
-    outb 0x80
-    outb 0xc3
-    outb 0x21
-    outb 0x0a
+    outb 0x80             ; SYNC
+    outb 0xc3             ; PID=DATA0
+    outb 0x21             ; bmRequestType=21
+    outb 0x0a             ; bRequest=a (Set_Idle)
+    outb 0x00             ; wValue=0
     outb 0x00
+    outb 0x00             ; wIndex=0
     outb 0x00
+    outb 0x00             ; wLength=0
     outb 0x00
-    outb 0x00
-    outb 0x00
-    outb 0x00
-    outb 0xd6
+    outb 0xd6             ; CRC16
     outb 0x20
-    out4 0x03
+    out4 0x03             ; EOP
     hiz
     ret
 
 get_hid_report:
     outb 0x80             ; SYNC
     outb 0xc3             ; PID=DATA0
-    outb 0x81             ; bmRequestType: 81
-    outb 0x06             ; bRequest=6 Get_Descriptor
-    outb 0x00             ; Desc Index: 0
-    outb 0x22             ; Desc Type: 22 HID
-    outb 0x00             ; Language ID: 0
-    outb 0x00             ;
-    outb 0x09             ; wLength = 9
+    outb 0x81             ; bmRequestType=81
+    outb 0x06             ; bRequest=6 (Get_Descriptor)
+    outb 0x00             ; Desc Index=0
+    outb 0x22             ; Desc Type=22 HID
+    outb 0x00             ; wInterfaceNumber=0
+    outb 0x00
+    outb 0x09             ; wLength=9
     outb 0x00
     outb 0xee             ; CRC16
     outb 0x0f
+    out4 0x03             ; EOP
+    hiz
+    ret
+
+xinput_led:
+    outb 0x80             ; SYNC
+    outb 0xc3             ; PID=DATA0
+    outb 0x01
+    outb 0x03
+    outb 0x02
+    outb 0x5e             ; CRC16
+    outb 0xce
+    out4 0x03             ; EOP
+    hiz
+    ret
+
+xinput_magic:
+    outb 0x80             ; SYNC
+    outb 0xc3             ; PID=DATA0
+    outb 0xc1             ; bmRequestType=c1
+    outb 0x01             ; bRequest=1
+    outb 0x00             ; wValue=0x0100
+    outb 0x01
+    outb 0x00             ; wIndex=0x0000
+    outb 0x00
+    outb 0x14             ; wLength=20
+    outb 0x00
+    outb 0x50             ; CRC16
+    outb 0x68
     out4 0x03             ; EOP
     hiz
     ret
@@ -321,45 +390,56 @@ rcvdt_eop:
 setup00:
     outb 0x80             ; SYNC
     outb 0x2d             ; PID
-    outb 0x00             ; ADDR:ENDP = 0:0
+    outb 0x00             ; ADDR:ENDP=0:0
     outb 0x10             ; + CRC5
     out4 0x03             ; EOP
     hiz
     ret
 
 setup10:
-    outb 0x80
-    outb 0x2d
-    outb 0x01
-    outb 0xe8
-    out4 0x03
+    outb 0x80             ; SYNC
+    outb 0x2d             ; PID
+    outb 0x01             ; ADDR:ENDP=1:0
+    outb 0xe8             ; + CRC5
+    out4 0x03             ; EOP
+    hiz
+    ret
+
+out15:
+    outb 0x80             ; SYNC
+    outb 0xe1             ; PID=OUT
+    outb 0x81             ; ADDR:ENDP=1:5
+    outb 0x0a             ; + CRC5
+    out4 0x03             ; EOP
     hiz
     ret
 
 in00:
-    outb 0x80
-    outb 0x69
-    outb 0x00
-    outb 0x10
-    out4 0x03
+    outb 0x80             ; SYNC
+    outb 0x69             ; PID=IN
+    outb 0x00             ; ADDR:ENDP=0:0
+    outb 0x10             ; + CRC5
+    out4 0x03             ; EOP
     hiz
     ret
 
 in10:
-    outb 0x80
-    outb 0x69
-    outb 0x01
-    outb 0xe8
-    out4 0x03
+    outb 0x80             ; SYNC
+    outb 0x69             ; PID=IN
+    outb 0x01             ; ADDR:ENDP=1:0
+    outb 0xe8             ; + CRC5
+    out4 0x03             ; EOP
     hiz
     ret
 
 in1x:
-    outb 0x80
-    outb 0x69
-    outr 0x08
-    outr 0x09
-    out4 0x03
+    outb 0x80             ; SYNC
+    outb 0x69             ; PID=IN
+    load 8                ; ADDR:ENDP
+    outr
+    load 9                ; + CRC5
+    outr
+    out4 0x03             ; EOP
     hiz
     ret
 

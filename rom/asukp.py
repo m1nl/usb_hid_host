@@ -43,28 +43,32 @@ instructions = {
     "save": 12,
     "in": 13,
     "wait": 14,
-    "jmp": 15,
+    "load": 15,
     "be": 16,
     "bc": 17,
     "bnak": 18,
     "bstall": 19,
     "bnz": 20,
-    "bnf": 21,
+    "bz": 21,
+    "bnf": 22,
+    "bjmp": 23,
 }
 
 
 def format_instruction(code, operands=None):
     """Format instruction bytes for listing"""
-    if code == 12:  # save
+    if code in [12, 15]:  # save, load
         if operands and len(operands) == 2:
             return f"{code:01x} {int(operands[0]):01x} {int(operands[1]):01x}"
+        if operands and len(operands) == 1:
+            return f"{code:01x} {int(operands[0]):01x}"
         return f"{code:01x} {15:01x} {15:01x}"
-    elif code in [1, 3, 6, 10]:  # ldi/out4/outb with immediate
+    elif code in [1, 3, 6]:  # ldi/out4/outb with immediate
         value = int(operands[0], 16) if operands[0].startswith("0x") else int(operands[0])
         return f"{code:01x} {value & 0x0F:01x} {(value >> 4) & 0x0F:01x}"
-    elif code in [8, 15, 16, 17, 18, 19, 20, 21]:  # jumps
+    elif code in [8, 16, 17, 18, 19, 20, 21, 22, 23]:  # jumps
         addr = operands[0] if operands else 0
-        if code in [16, 17, 18, 19, 20, 21]:  # bx
+        if code in [16, 17, 18, 19, 20, 21, 22, 23]:  # bx
             return f"{instructions['bx']:01x} {(code-16):01x} {addr & 0x0F:01x} {(addr >> 4) & 0x0F:01x}"
         return f"{code:01x} {addr & 0x0F:01x} {(addr >> 4) & 0x0F:01x}"
     return f"{code:01x}"
@@ -103,10 +107,12 @@ def main():
 
                 print(f"pc={pc:03x}\topcode={opcode}")
                 code = instructions[opcode]
-                if code in [16, 17, 18, 19, 20, 21]:  # bX
+                if code in [16, 17, 18, 19, 20, 21, 22, 23]:  # bX
                     pc += 4
-                elif code in [1, 3, 6, 8, 10, 12, 15]:  # instructions with operands
+                elif code in [1, 3, 6, 8, 12]:  # instructions with operands
                     pc += 3
+                elif code in [15]:
+                    pc += 2
                 else:
                     pc += 1
 
@@ -153,7 +159,7 @@ def main():
 
             opcode = tokens[0]
             code = instructions[opcode]
-            if code in [16, 17, 18, 19, 20, 21]:
+            if code in [16, 17, 18, 19, 20, 21, 22, 23]:
                 rom.append(instructions["bx"])
                 rom.append(code - 16)
             else:
@@ -162,7 +168,7 @@ def main():
             pc_start = pc
 
             # Format instruction bytes for listing
-            if code == 12:  # save
+            if code in [12]:  # save
                 if len(tokens) != 3:
                     sys.stderr.write(f"Malformed instruction: {line}\n")
                     sys.exit(1)
@@ -171,20 +177,28 @@ def main():
                 rom.append(int(tokens[2]))
                 pc += 3
 
-            elif code in [1, 3, 6, 10]:  # ldi/out4/outb/outr with immediate
+            elif code in [15]:  # load
+                if len(tokens) != 2:
+                    sys.stderr.write(f"Malformed instruction: {line}\n")
+                    sys.exit(1)
+                bytes_str = format_instruction(code, tokens[1:])
+                rom.append(int(tokens[1]))
+                pc += 2
+
+            elif code in [1, 3, 6]:  # ldi/out4/outb/outr with immediate
                 bytes_str = format_instruction(code, tokens[1:])
                 value = int(tokens[1], 16) if tokens[1].startswith("0x") else int(tokens[1])
                 rom.append(value & 0x0F)
                 rom.append((value >> 4) & 0x0F)
                 pc += 3
 
-            elif code in [8, 15, 16, 17, 18, 19, 20, 21]:  # jumps
+            elif code in [8, 16, 17, 18, 19, 20, 21, 22, 23]:  # jumps
                 label = tokens[1]
                 address = labels[label] >> 2
                 bytes_str = format_instruction(code, [address])
                 rom.append(address & 0x0F)
                 rom.append((address >> 4) & 0x0F)
-                pc += 3 if code in [8, 15] else 4
+                pc += 3 if code in [8] else 4
 
             else:
                 bytes_str = format_instruction(code)

@@ -83,7 +83,7 @@ async def test_usb_hid_host_reset(dut):
 
     await usb.send_packet(KEYBOARD_DEVICE_DESCRIPTOR_2)
 
-    await ClockCycles(dut.clk, 1520)
+    await ClockCycles(dut.clk, 1720)
 
     await usb.send_packet(bytes([0xA5, 0x5A]))
 
