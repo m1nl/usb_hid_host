@@ -1,4 +1,4 @@
-## usb_hid_host 
+## usb_hid_host
 
 **a compact USB HID host core supporting low-speed and full-speed devices**
 
@@ -20,7 +20,7 @@ The features of the design are:
   * A small and efficient USB host controller core capable of supporting common HID devices such as keyboards, mice and gamepads.
   * No CPU is required. The core handles all layers of the USB protocol relevant to HID devices.
   * No USB interface IC (PHY) needed. The core communciates directly through the D+/D- USB pins.
-  * USB low-speed (1.5Mbps) and full-speed (12Mbps) support, utilizing a single 12MHz or 96MHz clock. 
+  * USB low-speed (1.5Mbps) and full-speed (12Mbps) support, utilizing a single 12MHz or 96MHz clock.
 
 To make USB work is actually tricky. USB is designed to be implemented with both hardware and software. So a CPU is normally needed. The UKP and hi631's design uses a tiny microcode processor to be just able to support keyboards and a specific gamepad. This core extended the original design by adding mouse support, automatic detecting all three types of devices, and accomodating various types of gamepads. Then support for full-speed USB has been added - this involved complete redesign of the original code so it could support bigger frames (more than 8 bytes of data), USB full-speed / low-speed negotiation and additional USB transactions (`SET_IDLE`, `GET_DESCRIPTOR / DEVICE` and `GET_DESCRIPTOR / HID`).
 
@@ -39,13 +39,18 @@ This redesigned core differs significantly from the [original implementation](ht
   - `GET_DESCRIPTOR / DEVICE` transaction to capture VID/PID
   - `SET_IDLE` transaction with `STALL` response handling
   - `GET_DESCRIPTOR / HID` transaction
-- **New microcode instructions**: `OUTR` (output register), `SAVE` (save to register), `BSTALL` (branch on STALL), `BNF` (branch if not full-speed), enhanced `BE` (speed detection)
+- **Xbox 360-compatible gamepad initialization** with vendor-specific transactions:
+  - LED control packet (`XINPUT_LED`) required by 8BitDo controllers
+  - Magic initialization packet (`XINPUT_INIT`) required by third-party controllers
+  - Conditional enumeration path based on interface protocol detection
+- **New microcode instructions**: `OUTR` (output register), `SAVE` (save to register), `LOAD` (load from register), `BSTALL` (branch on STALL), `BNF` (branch if not full-speed), `BZ` (branch if zero), `BJMP` (unconditional branch), enhanced `BE` (speed detection)
 - **Device-specific endpoint polling** using captured VID (e.g., 8BitDo uses endpoint 4 vs standard endpoint 1)
 - **SOF frame generation** every 1ms for full-speed devices
 
 ### Device support
 - **VID/PID-based HID report mapping** for improved gamepad compatibility:
-  - 8BitDo controllers (VID 0x2dc8): custom HAT switch decoding, shoulder button mapping
+  - 8BitDo controllers in X-Input mode: D-pad and button mappings
+  - 8BitDo controllers in D-Input mode (VID 0x2dc8): custom HAT switch decoding, shoulder button mapping
   - Speedlink Competition PRO (VID 0x040b, 0x0738): joystick position interpretation
   - Generic fallback for standard gamepad layouts
 
@@ -55,12 +60,13 @@ This redesigned core differs significantly from the [original implementation](ht
 - full-speed devices send packets of different lengths so we cannot make assumptions about their size - I noted that Speedlink joystick is able to send entire packet in a single frame, whereas Logitech wireless keyboard splits packets into 8-byte frames (both full-speed)
 - we need to support `STALL` response as some low-speed devices do not support `SET_IDLE` request and enumeration fails
 - full-speed devices need `SOF` transaction being sent every 1ms; they don't care about the frame number though :)
-- some devices use non-standard endpoint numbers for HID - i.e. 8BitDo controllers use endpoint 4 for HID
+- some devices use non-standard endpoint numbers - i.e. 8BitDo controllers use endpoint 4 for HID or Xbox 360-compatible endpoint
+- Xbox 360-compatible gamepads require vendor-specific initialization sequence (see [linux xpad driver](https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c) and [Jakob's blog post](https://jakob.space/blog/sorry-guys-i-have-to-troubleshoot-my-usb-drivers-before-i-can-play.html))
 
 ## Hardware design
 
 The updated core has been tested with EBAZ4205 board ( https://github.com/XyleMora/EBAZ4205 , https://github.com/m1nl/ebaz4205-hdmi-demo ). The following devices has been validated and they're working properly:
-- 8BitDo Ultimate 2C Wireless Pad
+- 8BitDo Ultimate 2C Wireless Pad in D-Input (legacy) and X-Input (Xbox 360-compatible mode)
 - Logitech keyboard with Logitech Unifying receiver
 - SpeedLink Competition PRO Extra
 - old Logitech low-speed USB mouse
@@ -101,24 +107,26 @@ You can find a very crude testbench in `tb/` directory. It's purpose is to gener
 | 1      | LDI         | Load 8-bit constant into W |
 | 2      | START       | Marks start of USB packet |
 | 3      | OUT4        | Output 4 bits |
-| 4      | OUT0        | Output 0 on both D+ and D- |
+| 4      | ----        | ---- |
 | 5      | HIZ         | Set both D+ and D- to hi-impedance |
 | 6      | OUTB        | Output a byte (8 bits) |
 | 7      | RET         | Return to the next instruction of last CALL |
 | 8      | CALL        | Save PC and jump to address |
 | 9      | ----        | Prefix for BX instructions listed below |
-| A      | OUTR        | Output a byte from input register (8 bits) |
+| A      | OUTR        | Output a byte from W register (8 bits) |
 | B      | DEC         | Decrement W register |
-| C      | SAVE        | Save receive buffer byte b into register | 
+| C      | SAVE        | Save receive buffer byte into register |
 | D      | IN          | Wait for input packet and proceed with sampling. Finish if both D+ and D- are 0, proceed to the next instruction. Decrement the W register with every bit received and strobe when payload byte is ready. |
 | E      | WAIT	       | Wait for 1ms timing |
-| F      | JMP         | Jump to address without saving return address |
+| F      | LOAD        | Loads a byte from register into W |
 | 9 0    | BE          | Jump to address when D+ and D- are both 0 or 1, or line error condition when connected; set full-speed mode if D+ is high otherwise |
 | 9 1    | BC          | Jump to address when connected |
 | 9 2    | BNAK        | Jump to address when previous IN transaction returned NAK |
 | 9 3    | BSTALL      | Jump to address when previous IN transaction returned STALL |
-| 9 4    | BNZ         | Jump to address when W register is 0 |
-| 9 5    | BNF         | Jump to address when device is not full-speed |
+| 9 4    | BNZ         | Jump to address when W register is not zero |
+| 9 5    | BZ          | Jump to address when W register is zero |
+| 9 6    | BNF         | Jump to address when device is not full-speed |
+| 9 7    | BJMP        | Unconditional branch to address |
 
 ```
 Output Registers: 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL)
@@ -131,7 +139,7 @@ All HID events are transmitted in messages, *HID reports* in USB terminology. Fo
 
 ## Keyboard
 
-USB keyboards transmit *scancodes* instead of ASCII codes. Therefore `key_0`, `key_1`, `key_2`, and `key_3` represent scancodes of the currently pressed keys. The `key_modifiers` output indicates the status of modifier keys like shift, ctrl, etc. If you need to convert the scancodes to ASCII, a simple method is demonstrated in the demo project (which supports up to 2 simultaneously pressed keys and lacks auto-repeat functionality). 
+USB keyboards transmit *scancodes* instead of ASCII codes. Therefore `key_0`, `key_1`, `key_2`, and `key_3` represent scancodes of the currently pressed keys. The `key_modifiers` output indicates the status of modifier keys like shift, ctrl, etc. If you need to convert the scancodes to ASCII, a simple method is demonstrated in the demo project (which supports up to 2 simultaneously pressed keys and lacks auto-repeat functionality).
 
 If you prefer to do the conversion on your own, you can find scancodes in the "keyboard/Keypad Page" sector of the HID Usage Tables. See [scancode](https://gist.github.com/MightyPork/6da26e382a7ad91b5496ee55fdc73db2)
 
