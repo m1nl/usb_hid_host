@@ -24,480 +24,478 @@ Address  Code    Source
 0000    5             hiz
 
 ; ---- set interrupt transfer interval
-0001    9 6 3 0       bnf long_interval
-0005    1 5 0         ldi 5
-0008    9 7 4 0       bjmp cstart2
-000c              long_interval:
-000c    1 a 0         ldi 10
-000f    0
-0010              cstart2:
-0010    e             wait
-0011    9 1 f 5       bc connected
-0015    9 0 4 0       be cstart2
+0001    f d           load 13
+0003    0
+0004              cstart2:
+0004    e             wait
+0005    9 1 c 5       bc connected
+0009    9 0 1 0       be cstart2
 
 ; ---- wait 200ms after device attached
-0019    c f 0         save 15 0             ; disconnected, reset watchdog
-001c    1 8 c         ldi 200
-001f    0
-0020              w200ms:
-0020    e             wait
-0021    b             dec
-0022    9 4 8 0       bnz w200ms
+000d    c f 0         save 15 0             ; disconnected, reset watchdog
+0010    1 8 c         ldi 200
+0013    0
+0014              w200ms:
+0014    e             wait
+0015    b             dec
+0016    9 4 5 0       bnz w200ms
 
 ; ---- enumeration sequence
-0026    8 8 6         call reset            ; reset device
+001a    8 5 6         call reset            ; reset device
 
 ; GET_DESCRIPTOR (Device, 0)
-0029    e             wait
-002a    8 9 e         call sof
-002d    8 8 c         call setup00
-0030    8 0 7         call get_device
-0033    8 4 c         call rcvdt
-0036    1 0 9         ldi 144               ; receive 18 bytes of data from device
-0039    2             start                 ; mark start of read transaction
+001d    e             wait
+001e    8 6 e         call sof
+0021    8 5 c         call setup00
+0024    8 d 6         call get_device
+0027    8 1 c         call rcvdt
+002a    1 0 9         ldi 144               ; receive 18 bytes of data from device
+002d    2             start                 ; mark start of read transaction
 
 ; IN(0,0), ACK(), device descriptor
-003a    0 0
-003c              wait_get_device:
-003c    e             wait
-003d    8 9 e         call sof
-0040    8 7 d         call in00
-0043    8 5 c         call rcvdt2
-0046    9 2 f 0       bnak wait_get_device
-004a    8 6 e         call sendack
-004d    9 4 f 0       bnz wait_get_device
-0051    1 8 0         ldi 8                 ; set packet offset
-0054    c 0 0         save 0 0              ; idVendor lsb
-0057    c 1 1         save 1 1              ; idVendor msb
-005a    c 2 2         save 2 2              ; idProduct lsb
-005d    c 3 3         save 3 3              ; idProduct msb
+002e    0 0
+0030              wait_get_device:
+0030    e             wait
+0031    8 6 e         call sof
+0034    8 4 d         call in00
+0037    8 2 c         call rcvdt2
+003a    9 2 c 0       bnak wait_get_device
+003e    8 3 e         call sendack
+0041    9 4 c 0       bnz wait_get_device
+0045    1 8 0         ldi 8                 ; set packet offset
+0048    c 0 0         save 0 0              ; idVendor lsb
+004b    c 1 1         save 1 1              ; idVendor msb
+004e    c 2 2         save 2 2              ; idProduct lsb
+0051    c 3 3         save 3 3              ; idProduct msb
 
 ; GET_DESCRIPTOR (Configuration, 0)
-0060    e             wait
-0061    8 9 e         call sof
-0064    8 8 c         call setup00
-0067    8 b 7         call get_config
-006a    8 4 c         call rcvdt
-006d    1 0 9         ldi 144               ; receive up to 18 bytes of data from device
-0070    2             start                 ; mark start of read transaction
+0054    e             wait
+0055    8 6 e         call sof
+0058    8 5 c         call setup00
+005b    8 8 7         call get_config
+005e    8 1 c         call rcvdt
+0061    1 0 9         ldi 144               ; receive up to 18 bytes of data from device
+0064    2             start                 ; mark start of read transaction
 
 ; IN(0,0), ACK(), configuration descriptor
-0071    0 0 0
-0074              wait_get_config:
-0074    e             wait
-0075    8 9 e         call sof
-0078    8 7 d         call in00
-007b    8 5 c         call rcvdt2
-007e    9 2 d 1       bnak wait_get_config
-0082    8 6 e         call sendack
-0085    9 4 d 1       bnz wait_get_config
-0089    1 e 0         ldi 14                ; set packet offset
-008c    c 4 0         save 4 0              ; interface class
-008f    c 5 1         save 5 1              ; interface sub-class
-0092    c 6 2         save 6 2              ; interface protocol
+0065    0 0 0
+0068              wait_get_config:
+0068    e             wait
+0069    8 6 e         call sof
+006c    8 4 d         call in00
+006f    8 2 c         call rcvdt2
+0072    9 2 a 1       bnak wait_get_config
+0076    8 3 e         call sendack
+0079    9 4 a 1       bnz wait_get_config
+007d    1 e 0         ldi 14                ; set packet offset
+0080    c 4 0         save 4 0              ; interface class
+0083    c 5 1         save 5 1              ; interface sub-class
+0086    c 6 2         save 6 2              ; interface protocol
 
 ; ---- initialization sequence
-0095    8 8 6         call reset            ; reset device again
+0089    8 5 6         call reset            ; reset device again
 
 ; SET_ADDRESS (0, 1)
-0098    e             wait
-0099    8 9 e         call sof
-009c    8 8 c         call setup00
-009f    8 6 8         call set_address
-00a2    8 4 c         call rcvdt
+008c    e             wait
+008d    8 6 e         call sof
+0090    8 5 c         call setup00
+0093    8 3 8         call set_address
+0096    8 1 c         call rcvdt
 
 ; IN(0,0), ACK()
-00a5    0 0 0
-00a8              wait_set_address:
-00a8    e             wait
-00a9    8 9 e         call sof
-00ac    8 7 d         call in00
-00af    8 4 c         call rcvdt
-00b2    9 2 a 2       bnak wait_set_address
-00b6    8 6 e         call sendack
+0099    0 0 0
+009c              wait_set_address:
+009c    e             wait
+009d    8 6 e         call sof
+00a0    8 4 d         call in00
+00a3    8 1 c         call rcvdt
+00a6    9 2 7 2       bnak wait_set_address
+00aa    8 3 e         call sendack
 
 ; SET_CONFIGURATION (1, 1)
-00b9    e             wait
-00ba    8 9 e         call sof
-00bd    8 d c         call setup10
-00c0    8 1 9         call set_config
-00c3    8 4 c         call rcvdt
+00ad    e             wait
+00ae    8 6 e         call sof
+00b1    8 a c         call setup10
+00b4    8 e 8         call set_config
+00b7    8 1 c         call rcvdt
 
 ; IN(1,0), ACK()
-00c6    0 0
-00c8              wait_set_config:
-00c8    e             wait
-00c9    8 9 e         call sof
-00cc    8 c d         call in10
-00cf    8 4 c         call rcvdt
-00d2    9 2 2 3       bnak wait_set_config
-00d6    8 6 e         call sendack
+00ba    0 0
+00bc              wait_set_config:
+00bc    e             wait
+00bd    8 6 e         call sof
+00c0    8 9 d         call in10
+00c3    8 1 c         call rcvdt
+00c6    9 2 f 2       bnak wait_set_config
+00ca    8 3 e         call sendack
 
 ; skip HID initialization for Xbox 360-compatbile controllers
-00d9    f a           load 10
-00db    9 4 e 4       bnz xinput_init
+00cd    f c           load 12
+00cf    9 4 b 4       bnz xinput_init
 
 ; SET_IDLE (1, 0)
-00df    e             wait
-00e0    8 9 e         call sof
-00e3    8 d c         call setup10
-00e6    8 c 9         call set_idle
-00e9    8 4 c         call rcvdt
+00d3    e             wait
+00d4    8 6 e         call sof
+00d7    8 a c         call setup10
+00da    8 9 9         call set_idle
+00dd    8 1 c         call rcvdt
 
 ; IN(1,0), ACK()
-00ec              wait_set_idle:
-00ec    e             wait
-00ed    8 9 e         call sof
-00f0    8 c d         call in10
-00f3    8 4 c         call rcvdt
-00f6    9 3 1 4       bstall set_idle_ready
-00fa    9 2 b 3       bnak wait_set_idle
-00fe    8 6 e         call sendack
-0101    0 0 0
-0104              set_idle_ready:
+00e0              wait_set_idle:
+00e0    e             wait
+00e1    8 6 e         call sof
+00e4    8 9 d         call in10
+00e7    8 1 c         call rcvdt
+00ea    9 3 e 3       bstall set_idle_ready
+00ee    9 2 8 3       bnak wait_set_idle
+00f2    8 3 e         call sendack
+00f5    0 0 0
+00f8              set_idle_ready:
 
 ; GET_DESCRIPTOR (HID, 1, 0)
-0104    e             wait
-0105    8 9 e         call sof
-0108    8 d c         call setup10
-010b    8 7 a         call get_hid_report
-010e    8 4 c         call rcvdt
-0111    1 8 4         ldi 72                ; receive 9 bytes of data from device
-0114    2             start                 ; mark start of read transaction
+00f8    e             wait
+00f9    8 6 e         call sof
+00fc    8 a c         call setup10
+00ff    8 4 a         call get_hid_report
+0102    8 1 c         call rcvdt
+0105    1 8 4         ldi 72                ; receive 9 bytes of data from device
+0108    2             start                 ; mark start of read transaction
 
 ; IN(1,0), ACK() - read but ignore contents
-0115    0 0 0
-0118              wait_get_hid_report:
-0118    e             wait
-0119    8 9 e         call sof
-011c    8 c d         call in10
-011f    8 5 c         call rcvdt2
-0122    9 3 d 4       bstall get_hid_report_ready
-0126    9 2 6 4       bnak wait_get_hid_report
-012a    8 6 e         call sendack
-012d    9 4 6 4       bnz wait_get_hid_report
-0131    0 0 0
-0134              get_hid_report_ready:
-0134    9 7 d 5       bjmp init_finished
+0109    0 0 0
+010c              wait_get_hid_report:
+010c    e             wait
+010d    8 6 e         call sof
+0110    8 9 d         call in10
+0113    8 2 c         call rcvdt2
+0116    9 3 a 4       bstall get_hid_report_ready
+011a    9 2 3 4       bnak wait_get_hid_report
+011e    8 3 e         call sendack
+0121    9 4 3 4       bnz wait_get_hid_report
+0125    0 0 0
+0128              get_hid_report_ready:
+0128    9 7 a 5       bjmp init_finished
 
-0138              xinput_init:
+012c              xinput_init:
 ; huge thanks to Jakob
 ; ref: https://jakob.space/blog/sorry-guys-i-have-to-troubleshoot-my-usb-drivers-before-i-can-play.html
 ; XINPUT_LED (1)
-0138    e             wait
-0139    8 9 e         call sof
-013c    8 2 d         call out15
-013f    8 2 b         call xinput_led
-0142    8 4 c         call rcvdt
+012c    e             wait
+012d    8 6 e         call sof
+0130    8 f c         call out1x
+0133    8 f a         call xinput_led
+0136    8 1 c         call rcvdt
 
 ; some third-party controllers Xbox 360-style controllers
 ; require this message to finish initialization
 ; ref: linux/drivers/input/joystick/xpad.c
 ; XINPUT_INIT (1)
-0145    e             wait
-0146    8 9 e         call sof
-0149    8 d c         call setup10
-014c    8 9 b         call xinput_magic
-014f    8 4 c         call rcvdt
-0152    1 0 a         ldi 160               ; receive 20 bytes of data from device
-0155    2             start                 ; mark start of read transaction
+0139    e             wait
+013a    8 6 e         call sof
+013d    8 a c         call setup10
+0140    8 6 b         call xinput_magic
+0143    8 1 c         call rcvdt
+0146    1 0 a         ldi 160               ; receive 20 bytes of data from device
+0149    2             start                 ; mark start of read transaction
 
 ; IN(1,0), ACK() - read but ignore contents
-0156    0 0
-0158              wait_xinput_magic:
-0158    e             wait
-0159    8 9 e         call sof
-015c    8 c d         call in10
-015f    8 5 c         call rcvdt2
-0162    9 3 d 5       bstall xinput_magic_ready
-0166    9 2 6 5       bnak wait_xinput_magic
-016a    8 6 e         call sendack
-016d    9 4 6 5       bnz wait_xinput_magic
-0171    0 0 0
-0174              xinput_magic_ready:
+014a    0 0
+014c              wait_xinput_magic:
+014c    e             wait
+014d    8 6 e         call sof
+0150    8 9 d         call in10
+0153    8 2 c         call rcvdt2
+0156    9 3 a 5       bstall xinput_magic_ready
+015a    9 2 3 5       bnak wait_xinput_magic
+015e    8 3 e         call sendack
+0161    9 4 3 5       bnz wait_xinput_magic
+0165    0 0 0
+0168              xinput_magic_ready:
 
 ; ---- initialization finished
-0174              init_finished:
-0174    c f 1         save 15 1             ; connected
-0177    9 7 0 0       bjmp cstart
+0168              init_finished:
+0168    c f 1         save 15 1             ; connected
+016b    9 7 0 0       bjmp cstart
 
 ; ---- interrupt polling
-017b    0
-017c              connected:
-017c    8 9 e         call sof
-017f    b             dec
-0180    9 4 4 0       bnz cstart2
-0184    2             start                 ; mark start of read transaction
-0185    8 1 e         call in1x
-0188    8 4 c         call rcvdt
-018b    9 2 0 0       bnak cstart
-018f    8 6 e         call sendack
-0192    9 7 0 0       bjmp cstart
+016f    0
+0170              connected:
+0170    8 6 e         call sof
+0173    b             dec
+0174    9 4 1 0       bnz cstart2
+0178    2             start                 ; mark start of read transaction
+0179    8 e d         call in1x
+017c    8 1 c         call rcvdt
+017f    9 2 0 0       bnak cstart
+0183    8 3 e         call sendack
+0186    9 7 0 0       bjmp cstart
 
 ; ---- disconnect and jump start
-0196    0 0
-0198              connerr:
-0198    c f 0         save 15 0             ; disconnected
-019b    9 7 0 0       bjmp cstart
+018a    0 0
+018c              connerr:
+018c    c f 0         save 15 0             ; disconnected
+018f    9 7 0 0       bjmp cstart
 
 ; ---- subroutines
-019f    0
-01a0              reset:
-01a0    3 0 0         out4 0x00
+0193    0
+0194              reset:
+0194    3 0 0         out4 0x00
 
 ; ---- wait 20ms
-01a3    1 4 1         ldi 20
-01a6    0 0
-01a8              loop_reset:
-01a8    e             wait
-01a9    b             dec
-01aa    9 4 a 6       bnz loop_reset
-01ae    5             hiz
+0197    1 4 1         ldi 20
+019a    0 0
+019c              loop_reset:
+019c    e             wait
+019d    b             dec
+019e    9 4 7 6       bnz loop_reset
+01a2    5             hiz
 
 ; ---- wait 40ms
-01af    1 8 2         ldi 40
+01a3    1 8 2         ldi 40
+01a6    0 0
+01a8              w40ms:
+01a8    e             wait
+01a9    8 6 e         call sof
+01ac    b             dec
+01ad    9 4 a 6       bnz w40ms
+01b1    7             ret
+
 01b2    0 0
-01b4              w40ms:
-01b4    e             wait
-01b5    8 9 e         call sof
-01b8    b             dec
-01b9    9 4 d 6       bnz w40ms
-01bd    7             ret
+01b4              get_device:               ; get device descriptor of (0,0)  get device descriptor of (0,0)
+01b4    6 0 8         outb 0x80             ; SYNC
+01b7    6 3 c         outb 0xc3             ; PID=DATA0
+01ba    6 0 8         outb 0x80             ; bmRequestType=80
+01bd    6 6 0         outb 0x06             ; bRequest=6 (Get_Descriptor)
+01c0    6 0 0         outb 0x00             ; Desc Index=0
+01c3    6 1 0         outb 0x01             ; Desc Type=1 (device)
+01c6    6 0 0         outb 0x00             ; Language ID=0
+01c9    6 0 0         outb 0x00             ;
+01cc    6 2 1         outb 0x12             ; wLength=18
+01cf    6 0 0         outb 0x00
+01d2    6 0 e         outb 0xe0             ; CRC16
+01d5    6 4 f         outb 0xf4
+01d8    3 3 0         out4 0x03             ; EOP
+01db    5             hiz
+01dc    7             ret
 
-01be    0 0
-01c0              get_device:               ; get device descriptor of (0,0)  get device descriptor of (0,0)
-01c0    6 0 8         outb 0x80             ; SYNC
-01c3    6 3 c         outb 0xc3             ; PID=DATA0
-01c6    6 0 8         outb 0x80             ; bmRequestType=80
-01c9    6 6 0         outb 0x06             ; bRequest=6 (Get_Descriptor)
-01cc    6 0 0         outb 0x00             ; Desc Index=0
-01cf    6 1 0         outb 0x01             ; Desc Type=1 (device)
-01d2    6 0 0         outb 0x00             ; Language ID=0
-01d5    6 0 0         outb 0x00             ;
-01d8    6 2 1         outb 0x12             ; wLength=18
-01db    6 0 0         outb 0x00
-01de    6 0 e         outb 0xe0             ; CRC16
-01e1    6 4 f         outb 0xf4
-01e4    3 3 0         out4 0x03             ; EOP
-01e7    5             hiz
-01e8    7             ret
+01dd    0 0 0
+01e0              get_config:               ; get config descriptor of (0,0)  get config descriptor of (0,0)
+01e0    6 0 8         outb 0x80             ; SYNC
+01e3    6 3 c         outb 0xc3             ; PID=DATA0
+01e6    6 0 8         outb 0x80             ; bmRequestType=0
+01e9    6 6 0         outb 0x06             ; bRequest=6 (Get_Descriptor)
+01ec    6 0 0         outb 0x00             ; Desc Index=0
+01ef    6 2 0         outb 0x02             ; Desc Type=2 (configuration)
+01f2    6 0 0         outb 0x00             ; Language ID=0
+01f5    6 0 0         outb 0x00             ;
+01f8    6 2 1         outb 0x12             ; wLength=18
+01fb    6 0 0         outb 0x00
+01fe    6 4 a         outb 0xa4             ; CRC16
+0201    6 4 f         outb 0xf4
+0204    3 3 0         out4 0x03             ; EOP
+0207    5             hiz
+0208    7             ret
 
-01e9    0 0 0
-01ec              get_config:               ; get config descriptor of (0,0)  get config descriptor of (0,0)
-01ec    6 0 8         outb 0x80             ; SYNC
-01ef    6 3 c         outb 0xc3             ; PID=DATA0
-01f2    6 0 8         outb 0x80             ; bmRequestType=0
-01f5    6 6 0         outb 0x06             ; bRequest=6 (Get_Descriptor)
-01f8    6 0 0         outb 0x00             ; Desc Index=0
-01fb    6 2 0         outb 0x02             ; Desc Type=2 (configuration)
-01fe    6 0 0         outb 0x00             ; Language ID=0
-0201    6 0 0         outb 0x00             ;
-0204    6 2 1         outb 0x12             ; wLength=18
-0207    6 0 0         outb 0x00
-020a    6 4 a         outb 0xa4             ; CRC16
-020d    6 4 f         outb 0xf4
-0210    3 3 0         out4 0x03             ; EOP
-0213    5             hiz
-0214    7             ret
-
-0215    0 0 0
-0218              set_address:              ; set address of device 0 to 1  set address of device 0 to 1
-0218    6 0 8         outb 0x80
-021b    6 3 c         outb 0xc3
+0209    0 0 0
+020c              set_address:              ; set address of device 0 to 1  set address of device 0 to 1
+020c    6 0 8         outb 0x80
+020f    6 3 c         outb 0xc3
+0212    6 0 0         outb 0x00
+0215    6 5 0         outb 0x05
+0218    6 1 0         outb 0x01
+021b    6 0 0         outb 0x00
 021e    6 0 0         outb 0x00
-0221    6 5 0         outb 0x05
-0224    6 1 0         outb 0x01
+0221    6 0 0         outb 0x00
+0224    6 0 0         outb 0x00
 0227    6 0 0         outb 0x00
-022a    6 0 0         outb 0x00
-022d    6 0 0         outb 0x00
-0230    6 0 0         outb 0x00
-0233    6 0 0         outb 0x00
-0236    6 b e         outb 0xeb
-0239    6 5 2         outb 0x25
-023c    3 3 0         out4 0x03
-023f    5             hiz
-0240    7             ret
+022a    6 b e         outb 0xeb
+022d    6 5 2         outb 0x25
+0230    3 3 0         out4 0x03
+0233    5             hiz
+0234    7             ret
 
-0241    0 0 0
-0244              set_config:               ; set active configuration of device 1 to 1 (default config)  set active configuration of device 1 to 1 (default config)
-0244    6 0 8         outb 0x80
-0247    6 3 c         outb 0xc3
+0235    0 0 0
+0238              set_config:               ; set active configuration of device 1 to 1 (default config)  set active configuration of device 1 to 1 (default config)
+0238    6 0 8         outb 0x80
+023b    6 3 c         outb 0xc3
+023e    6 0 0         outb 0x00
+0241    6 9 0         outb 0x09
+0244    6 1 0         outb 0x01
+0247    6 0 0         outb 0x00
 024a    6 0 0         outb 0x00
-024d    6 9 0         outb 0x09
-0250    6 1 0         outb 0x01
+024d    6 0 0         outb 0x00
+0250    6 0 0         outb 0x00
 0253    6 0 0         outb 0x00
-0256    6 0 0         outb 0x00
-0259    6 0 0         outb 0x00
-025c    6 0 0         outb 0x00
-025f    6 0 0         outb 0x00
-0262    6 7 2         outb 0x27
-0265    6 5 2         outb 0x25
-0268    3 3 0         out4 0x03
-026b    5             hiz
-026c    7             ret
+0256    6 7 2         outb 0x27
+0259    6 5 2         outb 0x25
+025c    3 3 0         out4 0x03
+025f    5             hiz
+0260    7             ret
 
-026d    0 0 0
-0270              set_idle:
-0270    6 0 8         outb 0x80             ; SYNC
-0273    6 3 c         outb 0xc3             ; PID=DATA0
-0276    6 1 2         outb 0x21             ; bmRequestType=21
-0279    6 a 0         outb 0x0a             ; bRequest=a (Set_Idle)
-027c    6 0 0         outb 0x00             ; wValue=0
+0261    0 0 0
+0264              set_idle:
+0264    6 0 8         outb 0x80             ; SYNC
+0267    6 3 c         outb 0xc3             ; PID=DATA0
+026a    6 1 2         outb 0x21             ; bmRequestType=21
+026d    6 a 0         outb 0x0a             ; bRequest=a (Set_Idle)
+0270    6 0 0         outb 0x00             ; wValue=0
+0273    6 0 0         outb 0x00
+0276    6 0 0         outb 0x00             ; wIndex=0
+0279    6 0 0         outb 0x00
+027c    6 0 0         outb 0x00             ; wLength=0
 027f    6 0 0         outb 0x00
-0282    6 0 0         outb 0x00             ; wIndex=0
-0285    6 0 0         outb 0x00
-0288    6 0 0         outb 0x00             ; wLength=0
-028b    6 0 0         outb 0x00
-028e    6 6 d         outb 0xd6             ; CRC16
-0291    6 0 2         outb 0x20
-0294    3 3 0         out4 0x03             ; EOP
-0297    5             hiz
-0298    7             ret
+0282    6 6 d         outb 0xd6             ; CRC16
+0285    6 0 2         outb 0x20
+0288    3 3 0         out4 0x03             ; EOP
+028b    5             hiz
+028c    7             ret
 
-0299    0 0 0
-029c              get_hid_report:
-029c    6 0 8         outb 0x80             ; SYNC
-029f    6 3 c         outb 0xc3             ; PID=DATA0
-02a2    6 1 8         outb 0x81             ; bmRequestType=81
-02a5    6 6 0         outb 0x06             ; bRequest=6 (Get_Descriptor)
-02a8    6 0 0         outb 0x00             ; Desc Index=0
-02ab    6 2 2         outb 0x22             ; Desc Type=22 HID
-02ae    6 0 0         outb 0x00             ; wInterfaceNumber=0
-02b1    6 0 0         outb 0x00
-02b4    6 9 0         outb 0x09             ; wLength=9
-02b7    6 0 0         outb 0x00
-02ba    6 e e         outb 0xee             ; CRC16
-02bd    6 f 0         outb 0x0f
-02c0    3 3 0         out4 0x03             ; EOP
-02c3    5             hiz
-02c4    7             ret
+028d    0 0 0
+0290              get_hid_report:
+0290    6 0 8         outb 0x80             ; SYNC
+0293    6 3 c         outb 0xc3             ; PID=DATA0
+0296    6 1 8         outb 0x81             ; bmRequestType=81
+0299    6 6 0         outb 0x06             ; bRequest=6 (Get_Descriptor)
+029c    6 0 0         outb 0x00             ; Desc Index=0
+029f    6 2 2         outb 0x22             ; Desc Type=22 HID
+02a2    6 0 0         outb 0x00             ; wInterfaceNumber=0
+02a5    6 0 0         outb 0x00
+02a8    6 9 0         outb 0x09             ; wLength=9
+02ab    6 0 0         outb 0x00
+02ae    6 e e         outb 0xee             ; CRC16
+02b1    6 f 0         outb 0x0f
+02b4    3 3 0         out4 0x03             ; EOP
+02b7    5             hiz
+02b8    7             ret
 
-02c5    0 0 0
-02c8              xinput_led:
-02c8    6 0 8         outb 0x80             ; SYNC
-02cb    6 3 c         outb 0xc3             ; PID=DATA0
-02ce    6 1 0         outb 0x01
-02d1    6 3 0         outb 0x03
-02d4    6 2 0         outb 0x02
-02d7    6 e 5         outb 0x5e             ; CRC16
-02da    6 e c         outb 0xce
-02dd    3 3 0         out4 0x03             ; EOP
-02e0    5             hiz
-02e1    7             ret
+02b9    0 0 0
+02bc              xinput_led:
+02bc    6 0 8         outb 0x80             ; SYNC
+02bf    6 3 c         outb 0xc3             ; PID=DATA0
+02c2    6 1 0         outb 0x01
+02c5    6 3 0         outb 0x03
+02c8    6 2 0         outb 0x02
+02cb    6 e 5         outb 0x5e             ; CRC16
+02ce    6 e c         outb 0xce
+02d1    3 3 0         out4 0x03             ; EOP
+02d4    5             hiz
+02d5    7             ret
 
-02e2    0 0
-02e4              xinput_magic:
-02e4    6 0 8         outb 0x80             ; SYNC
-02e7    6 3 c         outb 0xc3             ; PID=DATA0
-02ea    6 1 c         outb 0xc1             ; bmRequestType=c1
-02ed    6 1 0         outb 0x01             ; bRequest=1
-02f0    6 0 0         outb 0x00             ; wValue=0x0100
-02f3    6 1 0         outb 0x01
-02f6    6 0 0         outb 0x00             ; wIndex=0x0000
-02f9    6 0 0         outb 0x00
-02fc    6 4 1         outb 0x14             ; wLength=20
-02ff    6 0 0         outb 0x00
-0302    6 0 5         outb 0x50             ; CRC16
-0305    6 8 6         outb 0x68
-0308    3 3 0         out4 0x03             ; EOP
-030b    5             hiz
-030c    7             ret
+02d6    0 0
+02d8              xinput_magic:
+02d8    6 0 8         outb 0x80             ; SYNC
+02db    6 3 c         outb 0xc3             ; PID=DATA0
+02de    6 1 c         outb 0xc1             ; bmRequestType=c1
+02e1    6 1 0         outb 0x01             ; bRequest=1
+02e4    6 0 0         outb 0x00             ; wValue=0x0100
+02e7    6 1 0         outb 0x01
+02ea    6 0 0         outb 0x00             ; wIndex=0x0000
+02ed    6 0 0         outb 0x00
+02f0    6 4 1         outb 0x14             ; wLength=20
+02f3    6 0 0         outb 0x00
+02f6    6 0 5         outb 0x50             ; CRC16
+02f9    6 8 6         outb 0x68
+02fc    3 3 0         out4 0x03             ; EOP
+02ff    5             hiz
+0300    7             ret
 
-030d    0 0 0
-0310              rcvdt:
-0310    1 8 4         ldi 72                ; receive up to 9 bytes of data from device by default
+0301    0 0 0
+0304              rcvdt:
+0304    1 8 4         ldi 72                ; receive up to 9 bytes of data from device by default
+0307    0
+0308              rcvdt2:
+0308    d             in
+0309    0 0 0
+030c              rcvdt_eop:
+030c    5             hiz
+030d    9 0 3 c       be rcvdt_eop          ; wait for line idle
+0311    5             hiz                   ; ensure delay before next transaction
+0312    7             ret
+
 0313    0
-0314              rcvdt2:
-0314    d             in
-0315    0 0 0
-0318              rcvdt_eop:
-0318    5             hiz
-0319    9 0 6 c       be rcvdt_eop          ; wait for line idle
-031d    5             hiz                   ; ensure delay before next transaction
-031e    7             ret
+0314              setup00:
+0314    6 0 8         outb 0x80             ; SYNC
+0317    6 d 2         outb 0x2d             ; PID
+031a    6 0 0         outb 0x00             ; ADDR:ENDP=0:0
+031d    6 0 1         outb 0x10             ; + CRC5
+0320    3 3 0         out4 0x03             ; EOP
+0323    5             hiz
+0324    7             ret
 
-031f    0
-0320              setup00:
-0320    6 0 8         outb 0x80             ; SYNC
-0323    6 d 2         outb 0x2d             ; PID
-0326    6 0 0         outb 0x00             ; ADDR:ENDP=0:0
-0329    6 0 1         outb 0x10             ; + CRC5
-032c    3 3 0         out4 0x03             ; EOP
-032f    5             hiz
-0330    7             ret
+0325    0 0 0
+0328              setup10:
+0328    6 0 8         outb 0x80             ; SYNC
+032b    6 d 2         outb 0x2d             ; PID
+032e    6 1 0         outb 0x01             ; ADDR:ENDP=1:0
+0331    6 8 e         outb 0xe8             ; + CRC5
+0334    3 3 0         out4 0x03             ; EOP
+0337    5             hiz
+0338    7             ret
 
-0331    0 0 0
-0334              setup10:
-0334    6 0 8         outb 0x80             ; SYNC
-0337    6 d 2         outb 0x2d             ; PID
-033a    6 1 0         outb 0x01             ; ADDR:ENDP=1:0
-033d    6 8 e         outb 0xe8             ; + CRC5
-0340    3 3 0         out4 0x03             ; EOP
-0343    5             hiz
-0344    7             ret
+0339    0 0 0
+033c              out1x:
+033c    6 0 8         outb 0x80             ; SYNC
+033f    6 1 e         outb 0xe1             ; PID=OUT
+0342    f a           load 10               ; ADDR:ENDP
+0344    a             outr
+0345    f b           load 11               ; + CRC5
+0347    a             outr
+0348    3 3 0         out4 0x03             ; EOP
+034b    5             hiz
+034c    7             ret
 
-0345    0 0 0
-0348              out15:
-0348    6 0 8         outb 0x80             ; SYNC
-034b    6 1 e         outb 0xe1             ; PID=OUT
-034e    6 1 8         outb 0x81             ; ADDR:ENDP=1:5
-0351    6 a 0         outb 0x0a             ; + CRC5
-0354    3 3 0         out4 0x03             ; EOP
-0357    5             hiz
-0358    7             ret
+034d    0 0 0
+0350              in00:
+0350    6 0 8         outb 0x80             ; SYNC
+0353    6 9 6         outb 0x69             ; PID=IN
+0356    6 0 0         outb 0x00             ; ADDR:ENDP=0:0
+0359    6 0 1         outb 0x10             ; + CRC5
+035c    3 3 0         out4 0x03             ; EOP
+035f    5             hiz
+0360    7             ret
 
-0359    0 0 0
-035c              in00:
-035c    6 0 8         outb 0x80             ; SYNC
-035f    6 9 6         outb 0x69             ; PID=IN
-0362    6 0 0         outb 0x00             ; ADDR:ENDP=0:0
-0365    6 0 1         outb 0x10             ; + CRC5
-0368    3 3 0         out4 0x03             ; EOP
-036b    5             hiz
-036c    7             ret
+0361    0 0 0
+0364              in10:
+0364    6 0 8         outb 0x80             ; SYNC
+0367    6 9 6         outb 0x69             ; PID=IN
+036a    6 1 0         outb 0x01             ; ADDR:ENDP=1:0
+036d    6 8 e         outb 0xe8             ; + CRC5
+0370    3 3 0         out4 0x03             ; EOP
+0373    5             hiz
+0374    7             ret
 
-036d    0 0 0
-0370              in10:
-0370    6 0 8         outb 0x80             ; SYNC
-0373    6 9 6         outb 0x69             ; PID=IN
-0376    6 1 0         outb 0x01             ; ADDR:ENDP=1:0
-0379    6 8 e         outb 0xe8             ; + CRC5
-037c    3 3 0         out4 0x03             ; EOP
-037f    5             hiz
-0380    7             ret
+0375    0 0 0
+0378              in1x:
+0378    6 0 8         outb 0x80             ; SYNC
+037b    6 9 6         outb 0x69             ; PID=IN
+037e    f 8           load 8                ; ADDR:ENDP
+0380    a             outr
+0381    f 9           load 9                ; + CRC5
+0383    a             outr
+0384    3 3 0         out4 0x03             ; EOP
+0387    5             hiz
+0388    7             ret
 
-0381    0 0 0
-0384              in1x:
-0384    6 0 8         outb 0x80             ; SYNC
-0387    6 9 6         outb 0x69             ; PID=IN
-038a    f 8           load 8                ; ADDR:ENDP
-038c    a             outr
-038d    f 9           load 9                ; + CRC5
-038f    a             outr
-0390    3 3 0         out4 0x03             ; EOP
-0393    5             hiz
-0394    7             ret
+0389    0 0 0
+038c              sendack:
+038c    6 0 8         outb 0x80
+038f    6 2 d         outb 0xd2
+0392    3 3 0         out4 0x03
+0395    5             hiz
+0396    7             ret
 
-0395    0 0 0
-0398              sendack:
-0398    6 0 8         outb 0x80
-039b    6 2 d         outb 0xd2
-039e    3 3 0         out4 0x03
-03a1    5             hiz
-03a2    7             ret
+0397    0
+0398              sof:
+0398    9 0 3 6       be connerr
+039c    9 6 b e       bnf keep_alive
+03a0    6 0 8         outb 0x80
+03a3    6 5 a         outb 0xa5
+03a6    6 0 0         outb 0x00
+03a9    6 0 1         outb 0x10
+03ac              keep_alive:
+03ac    3 3 0         out4 0x03             ; low-speed keep-alive
+03af    5             hiz
+03b0    7             ret
 
-03a3    0
-03a4              sof:
-03a4    9 0 6 6       be connerr
-03a8    9 6 e e       bnf keep_alive
-03ac    6 0 8         outb 0x80
-03af    6 5 a         outb 0xa5
-03b2    6 0 0         outb 0x00
-03b5    6 0 1         outb 0x10
-03b8              keep_alive:
-03b8    3 3 0         out4 0x03             ; low-speed keep-alive
-03bb    5             hiz
-03bc    7             ret
-
-03bd    0 0 0
-03c0              prgend:
+03b1    0 0 0
+03b4              prgend:

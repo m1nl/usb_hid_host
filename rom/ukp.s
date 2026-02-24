@@ -22,11 +22,7 @@ cstart:
     hiz
 
 ; ---- set interrupt transfer interval
-    bnf long_interval
-    ldi 5
-    bjmp cstart2
-long_interval:
-    ldi 10
+    load 13
 cstart2:
     wait
     bc connected
@@ -126,7 +122,7 @@ wait_set_config:
     call sendack
 
 ; skip HID initialization for Xbox 360-compatbile controllers
-    load 10
+    load 12
     bnz xinput_init
 
 ; SET_IDLE (1, 0)
@@ -175,7 +171,7 @@ xinput_init:
 ; XINPUT_LED (1)
     wait
     call sof
-    call out15
+    call out1x
     call xinput_led
     call rcvdt
 
@@ -405,11 +401,13 @@ setup10:
     hiz
     ret
 
-out15:
+out1x:
     outb 0x80             ; SYNC
     outb 0xe1             ; PID=OUT
-    outb 0x81             ; ADDR:ENDP=1:5
-    outb 0x0a             ; + CRC5
+    load 10               ; ADDR:ENDP
+    outr
+    load 11               ; + CRC5
+    outr
     out4 0x03             ; EOP
     hiz
     ret

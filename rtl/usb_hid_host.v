@@ -68,6 +68,7 @@ wire [4:0] addrb;
 wire       save;
 wire       load;
 wire       connected;
+wire       full_speed;
 
 reg [7:0] load_data;
 
@@ -92,6 +93,7 @@ ukp #(
   .load(load),
   .load_data(load_data),
   .connected(connected),
+  .full_speed(full_speed),
   .connerr(connerr),
   .busy(busy),
   .rom_addr(rom_addr),
@@ -99,11 +101,13 @@ ukp #(
   .rom_en(rom_en)
 );
 
-reg [7:0] in_polling [0:1];  // USB IN request payload data for endpoint specific to a given VID
-reg       x_input;           // indicates if pad should be polled in X-Input mode
+reg [7:0] in_payload  [0:1];  // USB IN request payload data for endpoint specific to a given VID, PID
+reg [7:0] out_payload [0:1];  // USB OUT request payload data for endpoint specific to a given VID, PID
+reg       x_input;            // indicates if pad should be polled in X-Input mode
+reg [7:0] polling_interval;   // polling interval in ms
 
-reg [7:0] dat [0:17];        // data in last response (up to 18 bytes to address entire GET_DESCRIPTOR response)
-reg [7:0] regs [0:7];        // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL)
+reg [7:0] dat [0:17];         // data in last response (up to 18 bytes to address entire GET_DESCRIPTOR response)
+reg [7:0] regs [0:7];         // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL)
 reg [4:0] rcvct;
 reg [1:0] typ_next;
 reg       ukprdy_r;
@@ -129,12 +133,18 @@ always @(posedge clk) begin
   end else if (load) begin
     if (addra < 8)
       load_data <= regs[addra[2:0]];
-    else if (addra == 8)
-      load_data <= in_polling[0];
-    else if (addra == 9)
-      load_data <= in_polling[1];
-    else if (addra == 10)
+    else if (addra == 8)   // IN payload
+      load_data <= in_payload[0];
+    else if (addra == 9)   // IN payload
+      load_data <= in_payload[1];
+    else if (addra == 10)  // OUT payload
+      load_data <= out_payload[0];
+    else if (addra == 11)  // OUT payload
+      load_data <= out_payload[1];
+    else if (addra == 12)  // X-Input
       load_data <= x_input ? 8'b1 : 8'b0;
+    else if (addra == 13)  // polling interval
+      load_data <= polling_interval;
   end
 end
 
@@ -184,6 +194,7 @@ always @(posedge clk) begin
   end
 end
 
+// set typ depending on INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL
 always @(*) begin
   typ_next = 0;
   x_input  = 0;
@@ -200,16 +211,48 @@ always @(*) begin
   endcase
 end
 
+// set in_payload and out_payload payload depending on vid, pid
+// ref: https://rayslogic.com/Propeller/USB.htm#USB%20Token
 always @(*) begin
-  // set in_polling payload depending on vid (https://rayslogic.com/Propeller/USB.htm#USB%20Token)
-  case (vid)
-    16'h2dc8: begin  // 8BitDo
-      in_polling[0] = 8'h01;  // poll endpoint 4 (01 ba)
-      in_polling[1] = 8'hba;
+  casez ({vid, pid})
+    {16'h2dc8, 16'h301c},
+    {16'h2dc8, 16'h310a}: begin
+      in_payload[0] = 8'h01;   // IN endpoint 4 (01 ba)
+      in_payload[1] = 8'hba;
+
+      out_payload[0] = 8'h81;  // OUT endpoint 5 (81 0a)
+      out_payload[1] = 8'h0a;
+    end  // 8BitDo Ultimate 2C
+    default: begin
+      in_payload[0] = 8'h81;   // IN endpoint 1 (81 58) - default
+      in_payload[1] = 8'h58;
+
+      out_payload[0] = 8'h01;  // OUT endpoint 2 (01 c1) - default
+      out_payload[1] = 8'hc1;
+    end
+  endcase
+end
+
+// set polling interval depending on typ, speed, x_input, pid, vid
+always @(*) begin
+  casez ({typ, full_speed, x_input, vid, pid})
+    {2'bzz, 1'b0, 1'bz, 16'hzzzz, 16'hzzzz}: begin
+      polling_interval = 8'd10;  // 10ms for low-speed devices
+    end
+    {2'b10, 1'b1, 1'b0, 16'hzzzz, 16'hzzzz}: begin
+      polling_interval = 8'd2;   // 2ms for full-speed mouse
+    end
+    {2'b01, 1'b1, 1'b0, 16'hzzzz, 16'hzzzz}: begin
+      polling_interval = 8'd8;   // 8ms for full-speed keyboard
+    end
+    {2'b11, 1'b1, 1'bz, 16'h2dc8, 16'hzzzz}: begin
+      polling_interval = 8'd2;   // 2ms for 8BitDo
+    end
+    {2'b11, 1'b1, 1'b1, 16'hzzzz, 16'hzzzz}: begin
+      polling_interval = 8'd4;   // 4ms for other Xbox-compatible controllers
     end
     default: begin
-      in_polling[0] = 8'h81;  // poll endpoint 1 (81 58) - default
-      in_polling[1] = 8'h58;
+      polling_interval = 8'd8;   // 8ms default
     end
   endcase
 end
@@ -316,6 +359,7 @@ module ukp #(
   output wire       rom_en,
 
   output reg  connected,
+  output reg  full_speed,
   output wire connerr,
   output wire busy
 );
@@ -367,7 +411,6 @@ reg  [9:0] conct;
 reg  [8:0] bitaddr;  // 0~512
 
 reg ug, up, um, dpi, dmi, dis, did, cond, eot, nak, stall;
-reg full_speed;
 
 `ifdef VERILATOR
 wire interval_frame = interval == 30;
