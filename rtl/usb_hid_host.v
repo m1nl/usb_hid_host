@@ -293,17 +293,19 @@ always @(*) begin
         game_a = game_a || dat[2][0];  // lt
         game_b = game_b || dat[2][1];  // rt
       end
-      {1'b1, 16'hzzzz, 16'hzzzz}: begin // Xbox 360 - compatible (X-Input)
-        {game_y, game_x, game_b, game_a} = dat[3][7:4];  // buttons
-        {game_sel, game_sta} = {dat[2][5], dat[2][4]};   // - +
+      {1'b1, 16'hzzzz, 16'hzzzz}: begin  // Xbox 360 - compatible (X-Input)
+        if (dat[0] == 8'h00) begin  // valid pad data
+          {game_y, game_x, game_b, game_a} = dat[3][7:4];  // buttons
+          {game_sel, game_sta} = {dat[2][5], dat[2][4]};   // - +
 
-        {game_r, game_l, game_d, game_u} = {dat[2][3:0]}; // d-pad
+          {game_r, game_l, game_d, game_u} = {dat[2][3:0]}; // d-pad
 
-        game_d = game_d || dat[3][0];  // lb
-        game_u = game_u || dat[3][1];  // rb
+          game_d = game_d || dat[3][0];  // lb
+          game_u = game_u || dat[3][1];  // rb
 
-        game_a = game_a || (|dat[4]);  // lt
-        game_b = game_b || (|dat[5]);  // rt
+          game_a = game_a || (|dat[4]);  // lt
+          game_b = game_b || (|dat[5]);  // rt
+        end
       end
       {1'b0, 16'h0738, 16'h2217}: begin  // SpeedLink COMPETITION PRO Extra
         {game_y, game_x, game_b, game_a} = {dat[0][2], dat[0][0], dat[0][3], dat[0][1]};
