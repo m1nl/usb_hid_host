@@ -20,7 +20,8 @@ The features of the design are:
   * A small and efficient USB host controller core capable of supporting common HID devices such as keyboards, mice and gamepads.
   * No CPU is required. The core handles all layers of the USB protocol relevant to HID devices.
   * No USB interface IC (PHY) needed. The core communciates directly through the D+/D- USB pins.
-  * USB low-speed (1.5Mbps) and full-speed (12Mbps) support, utilizing a single 12MHz or 96MHz clock.
+  * USB low-speed (1.5Mbps) and full-speed (12Mbps) support, utilizing a single 12MHz or 60MHz clock.
+  * Configurable polling interval per device type, speed, and VID/PID.
 
 To make USB work is actually tricky. USB is designed to be implemented with both hardware and software. So a CPU is normally needed. The UKP and hi631's design uses a tiny microcode processor to be just able to support keyboards and a specific gamepad. This core extended the original design by adding mouse support, automatic detecting all three types of devices, and accomodating various types of gamepads. Then support for full-speed USB has been added - this involved complete redesign of the original code so it could support bigger frames (more than 8 bytes of data), USB full-speed / low-speed negotiation and additional USB transactions (`SET_IDLE`, `GET_DESCRIPTOR / DEVICE` and `GET_DESCRIPTOR / HID`).
 
@@ -29,7 +30,7 @@ To make USB work is actually tricky. USB is designed to be implemented with both
 This redesigned core differs significantly from the [original implementation](https://github.com/nand2mario/usb_hid_host/):
 
 ### General architecture
-- **Complete HDL rewrite** with UKP state machine moved into separate combinatorial and sequential processes supporting both low-speed (12MHz) and full-speed (96MHz) operation
+- **Complete HDL rewrite** with UKP state machine moved into separate combinatorial and sequential processes supporting both low-speed (12MHz) and full-speed (60MHz) operation
 - **External ROM interface** replacing embedded ROM, allowing easier microcode updates
 - **Module interface changes**: separate input/output signals (`usb_dm_i/o`, `usb_dp_i/o`, `usb_oe`), renamed signals (`report` → `full_report`, `key1-4` → `key_0-3`), added `cs`, `busy`, `dbg_hid_regs`
 - **FULL_SPEED parameter** for conditional full-speed support with clock prescaler for low-speed devices
@@ -44,13 +45,14 @@ This redesigned core differs significantly from the [original implementation](ht
   - Magic initialization packet (`XINPUT_INIT`) required by third-party controllers
   - Conditional enumeration path based on interface protocol detection
 - **New microcode instructions**: `OUTR` (output register), `SAVE` (save to register), `LOAD` (load from register), `BSTALL` (branch on STALL), `BNF` (branch if not full-speed), `BZ` (branch if zero), `BJMP` (unconditional branch), enhanced `BE` (speed detection)
-- **Device-specific endpoint polling** using captured VID (e.g., 8BitDo uses endpoint 4 vs standard endpoint 1)
+- **Device-specific endpoint polling** using captured VID/PID (e.g., 8BitDo Ultimate 2C uses endpoints 4/5 vs standard 1/2), with configurable `polling_interval` per device type and speed
 - **SOF frame generation** every 1ms for full-speed devices
 
 ### Device support
 - **VID/PID-based HID report mapping** for improved gamepad compatibility:
   - 8BitDo controllers in X-Input mode: D-pad and button mappings
   - 8BitDo controllers in D-Input mode (VID 0x2dc8): custom HAT switch decoding, shoulder button mapping
+  - VID/PID-specific IN/OUT endpoint payload selection (e.g., 8BitDo Ultimate 2C uses endpoint 4/5 vs default 1/2)
   - Speedlink Competition PRO (VID 0x040b, 0x0738): joystick position interpretation
   - Generic fallback for standard gamepad layouts
 
@@ -73,7 +75,7 @@ The updated core has been tested with EBAZ4205 board ( https://github.com/XyleMo
 
 ![ebaz4205 testing](doc/ebaz4205_test.jpg?raw=true "ebaz4205 testing")
 
-96MHz clock has been generated with PLL.
+60MHz clock has been generated with PLL.
 
 Sample connection guide has been provided nand2mario with the original version of the core. I didn't validate if it works with Tang Nano, I used direct USB <-> GPIO connection for my Xilinx board and had no issues with short cables. I'm not an expert in electrical engineering, but I think the series resistor values in the original version of the core are not valid. I'd recommend using 22 Ohm series resistor with FPGA GPIO as in [FOMU](https://workshop.fomu.im/en/latest/_static/reference/schematic-pvt.pdf) to match impedance of USB line - FPGA inputs are usually around 50 Ohm, so 22 Ohm resistors with D+ and D- lines should be just fine. I'd also recommend to use 15 kOhm pull-downs and ESD protection diodes.
 
@@ -98,7 +100,7 @@ You can find a very crude testbench in `tb/` directory. It's purpose is to gener
   * PC: program counter
   * W: 8-bit register that counts the number of times of some operation (e.g. number of bits to receive)
   * C flag: A 1-bit register that indicates whether or not the device is connected
-  * T / timing counter: 3-bit counter for USB timing (the core does 8x oversampling)
+  * T / timing counter: 3-bit counter for USB timing (the core does 5x oversampling for full-speed and 8x for low-speed)
   * Timer: counter making 1ms (used with WAIT instruction)
 
 | OpCode | Instruction | Effect |
@@ -113,7 +115,7 @@ You can find a very crude testbench in `tb/` directory. It's purpose is to gener
 | 7      | RET         | Return to the next instruction of last CALL |
 | 8      | CALL        | Save PC and jump to address |
 | 9      | ----        | Prefix for BX instructions listed below |
-| A      | OUTR        | Output a byte from W register (8 bits) |
+| A      | OUTR        | Output a byte from register (8 bits) |
 | B      | DEC         | Decrement W register |
 | C      | SAVE        | Save receive buffer byte into register |
 | D      | IN          | Wait for input packet and proceed with sampling. Finish if both D+ and D- are 0, proceed to the next instruction. Decrement the W register with every bit received and strobe when payload byte is ready. |
@@ -129,8 +131,8 @@ You can find a very crude testbench in `tb/` directory. It's purpose is to gener
 | 9 7    | BJMP        | Unconditional branch to address |
 
 ```
-Output Registers: 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL)
-Input Registers: 8 (INP0), 9 (INP1) - two bytes of IN endpoint polling transaction (may differ depending on VID / PID).
+RW Registers: 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL), 7 (UNUSED)
+RO Registers: 8 (INP0), 9 (INP1) - two bytes of IN endpoint polling transaction (may differ depending on VID / PID).
 ```
 
 ## Interpreting USB HID reports
