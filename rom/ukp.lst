@@ -45,7 +45,7 @@ Address  Code    Source
 
 ; GET_DESCRIPTOR (Device, 0)
 001d    e             wait
-001e    8 6 e         call sof
+001e    8 4 e         call sof
 0021    8 5 c         call setup00
 0024    8 d 6         call get_device
 0027    8 1 c         call rcvdt
@@ -56,11 +56,11 @@ Address  Code    Source
 002e    0 0
 0030              wait_get_device:
 0030    e             wait
-0031    8 6 e         call sof
-0034    8 4 d         call in00
+0031    8 4 e         call sof
+0034    8 3 d         call in00
 0037    8 2 c         call rcvdt2
 003a    9 2 c 0       bnak wait_get_device
-003e    8 3 e         call sendack
+003e    8 1 e         call sendack
 0041    9 4 c 0       bnz wait_get_device
 0045    1 8 0         ldi 8                 ; set packet offset
 0048    c 0 0         save 0 0              ; idVendor lsb
@@ -70,7 +70,7 @@ Address  Code    Source
 
 ; GET_DESCRIPTOR (Configuration, 0)
 0054    e             wait
-0055    8 6 e         call sof
+0055    8 4 e         call sof
 0058    8 5 c         call setup00
 005b    8 8 7         call get_config
 005e    8 1 c         call rcvdt
@@ -81,11 +81,11 @@ Address  Code    Source
 0065    0 0 0
 0068              wait_get_config:
 0068    e             wait
-0069    8 6 e         call sof
-006c    8 4 d         call in00
+0069    8 4 e         call sof
+006c    8 3 d         call in00
 006f    8 2 c         call rcvdt2
 0072    9 2 a 1       bnak wait_get_config
-0076    8 3 e         call sendack
+0076    8 1 e         call sendack
 0079    9 4 a 1       bnz wait_get_config
 007d    1 e 0         ldi 14                ; set packet offset
 0080    c 4 0         save 4 0              ; interface class
@@ -97,7 +97,7 @@ Address  Code    Source
 
 ; SET_ADDRESS (0, 1)
 008c    e             wait
-008d    8 6 e         call sof
+008d    8 4 e         call sof
 0090    8 5 c         call setup00
 0093    8 3 8         call set_address
 0096    8 1 c         call rcvdt
@@ -106,15 +106,15 @@ Address  Code    Source
 0099    0 0 0
 009c              wait_set_address:
 009c    e             wait
-009d    8 6 e         call sof
-00a0    8 4 d         call in00
+009d    8 4 e         call sof
+00a0    8 3 d         call in00
 00a3    8 1 c         call rcvdt
 00a6    9 2 7 2       bnak wait_set_address
-00aa    8 3 e         call sendack
+00aa    8 1 e         call sendack
 
 ; SET_CONFIGURATION (1, 1)
 00ad    e             wait
-00ae    8 6 e         call sof
+00ae    8 4 e         call sof
 00b1    8 a c         call setup10
 00b4    8 e 8         call set_config
 00b7    8 1 c         call rcvdt
@@ -123,11 +123,11 @@ Address  Code    Source
 00ba    0 0
 00bc              wait_set_config:
 00bc    e             wait
-00bd    8 6 e         call sof
-00c0    8 9 d         call in10
+00bd    8 4 e         call sof
+00c0    8 8 d         call in10
 00c3    8 1 c         call rcvdt
 00c6    9 2 f 2       bnak wait_set_config
-00ca    8 3 e         call sendack
+00ca    8 1 e         call sendack
 
 ; skip HID initialization for Xbox 360-compatbile controllers
 00cd    f c           load 12
@@ -135,7 +135,7 @@ Address  Code    Source
 
 ; SET_IDLE (1, 0)
 00d3    e             wait
-00d4    8 6 e         call sof
+00d4    8 4 e         call sof
 00d7    8 a c         call setup10
 00da    8 9 9         call set_idle
 00dd    8 1 c         call rcvdt
@@ -143,18 +143,18 @@ Address  Code    Source
 ; IN(1,0), ACK()
 00e0              wait_set_idle:
 00e0    e             wait
-00e1    8 6 e         call sof
-00e4    8 9 d         call in10
+00e1    8 4 e         call sof
+00e4    8 8 d         call in10
 00e7    8 1 c         call rcvdt
 00ea    9 3 e 3       bstall set_idle_ready
 00ee    9 2 8 3       bnak wait_set_idle
-00f2    8 3 e         call sendack
+00f2    8 1 e         call sendack
 00f5    0 0 0
 00f8              set_idle_ready:
 
 ; GET_DESCRIPTOR (HID, 1, 0)
 00f8    e             wait
-00f9    8 6 e         call sof
+00f9    8 4 e         call sof
 00fc    8 a c         call setup10
 00ff    8 4 a         call get_hid_report
 0102    8 1 c         call rcvdt
@@ -165,12 +165,12 @@ Address  Code    Source
 0109    0 0 0
 010c              wait_get_hid_report:
 010c    e             wait
-010d    8 6 e         call sof
-0110    8 9 d         call in10
+010d    8 4 e         call sof
+0110    8 8 d         call in10
 0113    8 2 c         call rcvdt2
 0116    9 3 a 4       bstall get_hid_report_ready
 011a    9 2 3 4       bnak wait_get_hid_report
-011e    8 3 e         call sendack
+011e    8 1 e         call sendack
 0121    9 4 3 4       bnz wait_get_hid_report
 0125    0 0 0
 0128              get_hid_report_ready:
@@ -181,7 +181,7 @@ Address  Code    Source
 ; ref: https://jakob.space/blog/sorry-guys-i-have-to-troubleshoot-my-usb-drivers-before-i-can-play.html
 ; XINPUT_LED (1)
 012c    e             wait
-012d    8 6 e         call sof
+012d    8 4 e         call sof
 0130    8 f c         call out1x
 0133    8 f a         call xinput_led
 0136    8 1 c         call rcvdt
@@ -191,7 +191,7 @@ Address  Code    Source
 ; ref: linux/drivers/input/joystick/xpad.c
 ; XINPUT_INIT (1)
 0139    e             wait
-013a    8 6 e         call sof
+013a    8 4 e         call sof
 013d    8 a c         call setup10
 0140    8 6 b         call xinput_magic
 0143    8 1 c         call rcvdt
@@ -202,12 +202,12 @@ Address  Code    Source
 014a    0 0
 014c              wait_xinput_magic:
 014c    e             wait
-014d    8 6 e         call sof
-0150    8 9 d         call in10
+014d    8 4 e         call sof
+0150    8 8 d         call in10
 0153    8 2 c         call rcvdt2
 0156    9 3 a 5       bstall xinput_magic_ready
 015a    9 2 3 5       bnak wait_xinput_magic
-015e    8 3 e         call sendack
+015e    8 1 e         call sendack
 0161    9 4 3 5       bnz wait_xinput_magic
 0165    0 0 0
 0168              xinput_magic_ready:
@@ -220,14 +220,14 @@ Address  Code    Source
 ; ---- interrupt polling
 016f    0
 0170              connected:
-0170    8 6 e         call sof
+0170    8 4 e         call sof
 0173    b             dec
 0174    9 4 1 0       bnz cstart2
 0178    2             start                 ; mark start of read transaction
-0179    8 e d         call in1x
+0179    8 d d         call in1x
 017c    8 1 c         call rcvdt
 017f    9 2 0 0       bnak cstart
-0183    8 3 e         call sendack
+0183    8 1 e         call sendack
 0186    9 7 0 0       bjmp cstart
 
 ; ---- disconnect and jump start
@@ -255,7 +255,7 @@ Address  Code    Source
 01a6    0 0
 01a8              w40ms:
 01a8    e             wait
-01a9    8 6 e         call sof
+01a9    8 4 e         call sof
 01ac    b             dec
 01ad    9 4 a 6       bnz w40ms
 01b1    7             ret
@@ -436,66 +436,62 @@ Address  Code    Source
 033c              out1x:
 033c    6 0 8         outb 0x80             ; SYNC
 033f    6 1 e         outb 0xe1             ; PID=OUT
-0342    f a           load 10               ; ADDR:ENDP
-0344    a             outr
-0345    f b           load 11               ; + CRC5
-0347    a             outr
-0348    3 3 0         out4 0x03             ; EOP
-034b    5             hiz
-034c    7             ret
+0342    a a           outr 10               ; ADDR:ENDP
+0344    a b           outr 11               ; + CRC5
+0346    3 3 0         out4 0x03             ; EOP
+0349    5             hiz
+034a    7             ret
 
-034d    0 0 0
-0350              in00:
-0350    6 0 8         outb 0x80             ; SYNC
-0353    6 9 6         outb 0x69             ; PID=IN
-0356    6 0 0         outb 0x00             ; ADDR:ENDP=0:0
-0359    6 0 1         outb 0x10             ; + CRC5
-035c    3 3 0         out4 0x03             ; EOP
-035f    5             hiz
-0360    7             ret
+034b    0
+034c              in00:
+034c    6 0 8         outb 0x80             ; SYNC
+034f    6 9 6         outb 0x69             ; PID=IN
+0352    6 0 0         outb 0x00             ; ADDR:ENDP=0:0
+0355    6 0 1         outb 0x10             ; + CRC5
+0358    3 3 0         out4 0x03             ; EOP
+035b    5             hiz
+035c    7             ret
 
-0361    0 0 0
-0364              in10:
-0364    6 0 8         outb 0x80             ; SYNC
-0367    6 9 6         outb 0x69             ; PID=IN
-036a    6 1 0         outb 0x01             ; ADDR:ENDP=1:0
-036d    6 8 e         outb 0xe8             ; + CRC5
-0370    3 3 0         out4 0x03             ; EOP
-0373    5             hiz
-0374    7             ret
+035d    0 0 0
+0360              in10:
+0360    6 0 8         outb 0x80             ; SYNC
+0363    6 9 6         outb 0x69             ; PID=IN
+0366    6 1 0         outb 0x01             ; ADDR:ENDP=1:0
+0369    6 8 e         outb 0xe8             ; + CRC5
+036c    3 3 0         out4 0x03             ; EOP
+036f    5             hiz
+0370    7             ret
 
-0375    0 0 0
-0378              in1x:
-0378    6 0 8         outb 0x80             ; SYNC
-037b    6 9 6         outb 0x69             ; PID=IN
-037e    f 8           load 8                ; ADDR:ENDP
-0380    a             outr
-0381    f 9           load 9                ; + CRC5
-0383    a             outr
-0384    3 3 0         out4 0x03             ; EOP
-0387    5             hiz
-0388    7             ret
+0371    0 0 0
+0374              in1x:
+0374    6 0 8         outb 0x80             ; SYNC
+0377    6 9 6         outb 0x69             ; PID=IN
+037a    a 8           outr 8                ; ADDR:ENDP
+037c    a 9           outr 9                ; + CRC5
+037e    3 3 0         out4 0x03             ; EOP
+0381    5             hiz
+0382    7             ret
 
-0389    0 0 0
-038c              sendack:
-038c    6 0 8         outb 0x80
-038f    6 2 d         outb 0xd2
-0392    3 3 0         out4 0x03
-0395    5             hiz
-0396    7             ret
+0383    0
+0384              sendack:
+0384    6 0 8         outb 0x80
+0387    6 2 d         outb 0xd2
+038a    3 3 0         out4 0x03
+038d    5             hiz
+038e    7             ret
 
-0397    0
-0398              sof:
-0398    9 0 3 6       be connerr
-039c    9 6 b e       bnf keep_alive
-03a0    6 0 8         outb 0x80
-03a3    6 5 a         outb 0xa5
-03a6    6 0 0         outb 0x00
-03a9    6 0 1         outb 0x10
-03ac              keep_alive:
-03ac    3 3 0         out4 0x03             ; low-speed keep-alive
-03af    5             hiz
-03b0    7             ret
+038f    0
+0390              sof:
+0390    9 0 3 6       be connerr
+0394    9 6 9 e       bnf keep_alive
+0398    6 0 8         outb 0x80
+039b    6 5 a         outb 0xa5
+039e    6 0 0         outb 0x00
+03a1    6 0 1         outb 0x10
+03a4              keep_alive:
+03a4    3 3 0         out4 0x03             ; low-speed keep-alive
+03a7    5             hiz
+03a8    7             ret
 
-03b1    0 0 0
-03b4              prgend:
+03a9    0 0 0
+03ac              prgend:

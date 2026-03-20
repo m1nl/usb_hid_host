@@ -404,10 +404,8 @@ setup10:
 out1x:
     outb 0x80             ; SYNC
     outb 0xe1             ; PID=OUT
-    load 10               ; ADDR:ENDP
-    outr
-    load 11               ; + CRC5
-    outr
+    outr 10               ; ADDR:ENDP
+    outr 11               ; + CRC5
     out4 0x03             ; EOP
     hiz
     ret
@@ -433,10 +431,8 @@ in10:
 in1x:
     outb 0x80             ; SYNC
     outb 0x69             ; PID=IN
-    load 8                ; ADDR:ENDP
-    outr
-    load 9                ; + CRC5
-    outr
+    outr 8                ; ADDR:ENDP
+    outr 9                ; + CRC5
     out4 0x03             ; EOP
     hiz
     ret

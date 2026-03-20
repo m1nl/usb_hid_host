@@ -57,7 +57,7 @@ instructions = {
 
 def format_instruction(code, operands=None):
     """Format instruction bytes for listing"""
-    if code in [12, 15]:  # save, load
+    if code in [10, 12, 15]:  # outr, save, load
         if operands and len(operands) == 2:
             return f"{code:01x} {int(operands[0]):01x} {int(operands[1]):01x}"
         if operands and len(operands) == 1:
@@ -111,7 +111,7 @@ def main():
                     pc += 4
                 elif code in [1, 3, 6, 8, 12]:  # instructions with operands
                     pc += 3
-                elif code in [15]:
+                elif code in [10, 15]:
                     pc += 2
                 else:
                     pc += 1
@@ -177,7 +177,7 @@ def main():
                 rom.append(int(tokens[2]))
                 pc += 3
 
-            elif code in [15]:  # load
+            elif code in [10, 15]:  # outr, load
                 if len(tokens) != 2:
                     sys.stderr.write(f"Malformed instruction: {line}\n")
                     sys.exit(1)

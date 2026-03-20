@@ -1,13 +1,12 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge, Timer
-
 from usb_line_driver import UsbLineDriver
 
 
 @cocotb.test()
 async def test_usb_hid_host_reset(dut):
-    clock = Clock(dut.clk, 10.416, unit="ns")
+    clock = Clock(dut.clk, 16.667, unit="ns")
     usb = UsbLineDriver(dut, "clk", "usb_dp_i", "usb_dm_i", speed=UsbLineDriver.FULL_SPEED)
 
     cocotb.start_soon(clock.start())

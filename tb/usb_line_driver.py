@@ -55,7 +55,7 @@ class UsbLineDriver:
         dp, dn = state
         self.dp.value = dp
         self.dn.value = dn
-        await ClockCycles(self.clk, 8)
+        await ClockCycles(self.clk, 5)
 
     # -----------------------------
     # Bus control
