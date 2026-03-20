@@ -20,9 +20,12 @@
 `default_nettype none
 `timescale 1ns / 1ps
 module usb_hid_host #(
-  parameter FULL_SPEED = 0
+  parameter FULL_SPEED = 1,
+  parameter KEYBOARD_SUPPORT = 1,
+  parameter MOUSE_SUPPORT = 1,
+  parameter GAME_SUPPORT = 1
 ) (
-  input wire clk,    // 96MHz clock when FULL_SPEED=1, otherwise 12MHz
+  input wire clk,    // 60MHz clock when FULL_SPEED=1, otherwise 12MHz
   input wire reset,  // reset
   input wire cs,     // chip select
 
@@ -64,7 +67,7 @@ wire       ukpstb;
 wire       ukpstart;
 wire [7:0] ukpdat;
 wire [3:0] addra;
-wire [4:0] addrb;
+wire [3:0] addrb;
 wire       save;
 wire       load;
 wire       connected;
@@ -106,9 +109,9 @@ reg [7:0] out_payload [0:1];  // USB OUT request payload data for endpoint speci
 reg       x_input;            // indicates if pad should be polled in X-Input mode
 reg [7:0] polling_interval;   // polling interval in ms
 
-reg [7:0] dat [0:17];         // data in last response (up to 18 bytes to address entire GET_DESCRIPTOR response)
-reg [7:0] regs [0:7];         // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL)
-reg [4:0] rcvct;
+reg [7:0] dat  [0:7];         // data in last response (up to 8 bytes, wraps-around)
+reg [7:0] regs [0:7];         // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL), 7 (UNUSED)
+reg [2:0] rcvct;
 reg [1:0] typ_next;
 reg       ukprdy_r;
 
@@ -127,8 +130,7 @@ always @(posedge clk) begin
       regs[i] <= 8'b0;
 
   end else if (save) begin
-    if (addra < 8 && addrb < 18)
-      regs[addra[2:0]] <= dat[addrb];
+    regs[addra[2:0]] <= dat[addrb[2:0]];
 
   end else if (load) begin
     if (addra < 8)
@@ -153,7 +155,7 @@ integer j;
 // handle ukp data from packets
 always @(posedge clk) begin
   if (reset || connerr) begin
-    for (j = 0; j < 18; j = j + 1)
+    for (j = 0; j < 8; j = j + 1)
       dat[j] <= 8'b0;
 
     ukprdy_r    <= 0;
@@ -170,10 +172,8 @@ always @(posedge clk) begin
     full_report <= 0;
 
     if (ukpstb) begin
-      if (rcvct < 20)  // 18 data bytes plus CRC16
-        rcvct <= rcvct + 1;
-      if (rcvct < 18)
-        dat[rcvct] <= ukpdat; // record byte from a packet
+      rcvct      <= rcvct + 1;
+      dat[rcvct] <= ukpdat;  // record byte from a packet
     end
   end else begin
     ukprdy_r    <= ukprdy;
@@ -181,12 +181,12 @@ always @(posedge clk) begin
     typ         <= connected ? typ_next : 0;
 
     if (ukprdy_r) begin  // individual packet received
-      rcvct       <= rcvct - 2;   // ignore CRC16
+      rcvct       <= rcvct - 2;   // ignore CRC16, important when packets are split
       full_report <= (typ != 0);  // strobe when connected
     end
 
     if (connected && typ != typ_next) begin
-      for (j = 0; j < 18; j = j + 1)
+      for (j = 0; j < 8; j = j + 1)
         dat[j] <= 8'b0;
 
       full_report <= 1;  // send empty report on connection state change
@@ -200,12 +200,12 @@ always @(*) begin
   x_input  = 0;
 
   casez ({regs[4], regs[5], regs[6]})  // INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL
-    {8'h03, 8'h01, 8'h01}: typ_next = 1;  // keyboard
-    {8'h03, 8'h01, 8'hzz}: typ_next = 2;  // mouse
-    {8'h03, 8'hzz, 8'hzz}: typ_next = 3;  // other (incl. 8BitDo, D-Input)
+    {8'h03, 8'h01, 8'h01}: if (KEYBOARD_SUPPORT) typ_next = 1;  // keyboard
+    {8'h03, 8'h01, 8'hzz}: if (MOUSE_SUPPORT)    typ_next = 2;  // mouse
+    {8'h03, 8'hzz, 8'hzz}: if (GAME_SUPPORT)     typ_next = 3;  // other (incl. 8BitDo, D-Input)
     {8'hff, 8'h5d, 8'h01},
     {8'hff, 8'h5d, 8'h81}: begin
-      typ_next = 3;
+      if (GAME_SUPPORT) typ_next = 3;
       x_input  = 1;
     end  // Xbox 360 (incl. 8BitDo, X-Input); wired - protocol 1, wireless - protocol 129
   endcase
@@ -266,13 +266,13 @@ always @(*) begin
   {game_y, game_x, game_b, game_a} = {1'b0, 1'b0, 1'b0, 1'b0};
   {game_sel, game_sta} = {1'b0, 1'b0};
 
-  if (typ == 1) begin
+  if (KEYBOARD_SUPPORT && typ == 1) begin
     {key_modifiers, key_0, key_1, key_2, key_3} = {dat[0], dat[2], dat[3], dat[4], dat[5]};
 
-  end else if (typ == 2) begin
+  end else if (MOUSE_SUPPORT && typ == 2) begin
     {mouse_btn, mouse_dx, mouse_dy} = {dat[0][2:0], dat[1], dat[2]};
 
-  end else if (typ == 3) begin
+  end else if (GAME_SUPPORT && typ == 3) begin
     casez ({x_input, vid, pid})
       {1'bz, 16'h2dc8, 16'h301c}: ;  // 8BitDo, idle
       {1'b0, 16'h2dc8, 16'hzzzz}: begin  // 8BitDo, assume generic D-Input
@@ -298,7 +298,7 @@ always @(*) begin
           {game_y, game_x, game_b, game_a} = dat[3][7:4];  // buttons
           {game_sel, game_sta} = {dat[2][5], dat[2][4]};   // - +
 
-          {game_r, game_l, game_d, game_u} = {dat[2][3:0]}; // d-pad
+          {game_r, game_l, game_d, game_u} = {dat[2][3:0]};  // d-pad
 
           game_d = game_d || dat[3][0];  // lb
           game_u = game_u || dat[3][1];  // rb
@@ -335,7 +335,7 @@ end
 endmodule
 
 module ukp #(
-  parameter FULL_SPEED = 0
+  parameter FULL_SPEED = 1
 ) (
   input wire clk,
   input wire reset,
@@ -351,7 +351,7 @@ module ukp #(
   output reg  [7:0] ukpdat,   // output data when ukpstb = 1
 
   output reg  [3:0] addra,
-  output reg  [4:0] addrb,
+  output reg  [3:0] addrb,
   output reg        save,
   output reg        load,
   input  wire [7:0] load_data,
@@ -378,15 +378,14 @@ localparam S_B2     = 8;
 localparam S_HIZ    = 9;
 localparam S_RX0    = 10;
 localparam S_RX1    = 11;
-localparam S_TXR0   = 12;
-localparam S_TX0    = 13;
-localparam S_TX1    = 14;
-localparam S_TX2    = 15;
-localparam S_SAVE0  = 16;
-localparam S_SAVE1  = 17;
-localparam S_LOAD0  = 18;
-localparam S_LOAD1  = 19;
-localparam S_LOAD2  = 20;
+localparam S_TX0    = 12;
+localparam S_TX1    = 13;
+localparam S_TX2    = 14;
+localparam S_SAVE0  = 15;
+localparam S_SAVE1  = 16;
+localparam S_LOAD0  = 17;
+localparam S_LOAD1  = 18;
+localparam S_LOAD2  = 19;
 
 wire [3:0] inst;
 wire       polarity;
@@ -397,7 +396,7 @@ wire       payload;
 wire       eop;
 wire       di;
 wire       dbit;
-wire       timing_0, timing_1, timing_3;
+wire       timing_0, timing_1, timing_2, timing_3, timing_rx;
 
 reg  [3:0] insth;
 reg  [7:0] wk;  // W register
@@ -406,7 +405,7 @@ reg  [2:0] sadr;  // out4 / outb write ptr
 reg  [2:0] timing;  // T register (0~7)
 reg  [2:0] prescaler;  // clock prescaler for low-speed
 reg  [3:0] lb4;
-reg [16:0] interval;
+reg [15:0] interval;
 reg  [7:0] data;  // received data
 reg  [2:0] nrztxct, nrzrxct;  // NRZI trans/recv count for bit stuffing
 reg  [9:0] conct;
@@ -417,7 +416,7 @@ reg ug, up, um, dpi, dmi, dis, did, cond, eot, nak, stall;
 `ifdef VERILATOR
 wire interval_frame = interval == 30;
 `else
-wire interval_frame = interval == (FULL_SPEED ? 96000 : 12000);
+wire interval_frame = interval == (FULL_SPEED ? 60000 : 12000);
 `endif
 
 assign polarity = full_speed;
@@ -448,16 +447,17 @@ assign rom_en   = state_next != S_SYNC &&
                   state_next != S_HIZ &&
                   state_next != S_RX0 &&
                   state_next != S_RX1 &&
-                  state_next != S_TXR0 &&
                   state_next != S_TX2 &&
                   state_next != S_LOAD1 &&
                   state_next != S_LOAD2;
 
-assign timing_0 = timing == 0 && prescaler == 0;
-assign timing_1 = timing == 1 && prescaler == 0;
-assign timing_3 = timing == 3 && prescaler == 0;
+assign timing_0  = timing == 0 && prescaler == 0;
+assign timing_1  = timing == 1 && prescaler == 0;
+assign timing_2  = timing == 2 && prescaler == 0;
+assign timing_3  = timing == 3 && prescaler == 0;
+assign timing_rx = (FULL_SPEED && full_speed) ? timing_2 : timing_3;
 
-assign sample       = state == S_RX1 && timing_3;
+assign sample       = state == S_RX1 && timing_rx;
 assign transmission = state == S_TX2 && timing_0;
 assign eop          = dpi == dmi;  // EOP or ERR
 
@@ -476,7 +476,7 @@ always @(*) begin
     3: cond = stall;  // op=BSTALL
     4: cond = wk > 0;  // op=BNZ
     5: cond = wk == 0;  // op=BZ
-    6: cond = !full_speed;  // op=BNF
+    6: cond = !FULL_SPEED || !full_speed;  // op=BNF
     7: cond = 1;  // op=BJMP
     default: cond = 0;
   endcase
@@ -514,10 +514,7 @@ always @(*) begin
           7: pc_next = wpc[0];  // op=RET
           8: state_next = S_B0;  // op=CALL
           9: state_next = S_BX;  // op=BX
-          10: begin
-            state_next = S_TXR0;
-            pc_next    = pc;
-          end  // op=OUTR
+          10: state_next = S_LOAD0;  // op=OUTR
           11: ;  // op=DEC
           12: state_next = S_SAVE0;  // op=SAVE
           13: begin
@@ -576,17 +573,13 @@ always @(*) begin
         else
           pc_next = pc;
       end
-      S_TXR0: begin
-        state_next = S_TX2;
-        pc_next = pc;
-      end
       S_TX0: state_next = S_TX1;
       S_TX1: begin
         state_next = S_TX2;
         pc_next = pc;
       end
       S_TX2: begin
-        if (eot && timing_1)
+        if (sadr == 0 && timing_0)
           state_next = S_OPCODE;
         else
           pc_next = pc;
@@ -601,7 +594,13 @@ always @(*) begin
         state_next = S_LOAD2;
         pc_next = pc;
       end
-      S_LOAD2: state_next = S_OPCODE;
+      S_LOAD2: begin
+        if (insth == 10) begin  // op=OUTR
+          state_next = S_TX2;
+          pc_next    = pc;
+        end else
+          state_next = S_OPCODE;
+      end
       default: state_next = S_OPCODE;
     endcase
   end
@@ -633,18 +632,22 @@ always @(posedge clk) begin
     ukpstb <= 0;
     ukpstart <= 0;
 
-    // prescaler
+    // div-5 prescaler for low-speed (60MHz -> 12MHz)
     if (FULL_SPEED && !full_speed)
-      prescaler <= prescaler + 1;
+      prescaler <= (prescaler == 4) ? 0 : prescaler + 1;
     else
       prescaler <= 0;
 
-    // timing
+    // oversampling - 8 for low-speed, 5 for high-speed
     did <= di;
     if (!ug && di != did)
       timing <= 0;
-    else if (prescaler == 0)
+    else if (prescaler == 0) begin
       timing <= timing + 1;
+
+      if (FULL_SPEED && full_speed && timing == 4)
+        timing <= 0;
+    end
 
     // framing
     if (interval_frame)
@@ -749,13 +752,8 @@ always @(posedge clk) begin
             ukprdy <= 0;
         end
       end
-      S_TXR0: begin
-        sb  <= wk;
-        eot <= 0;
-      end
       S_TX0: begin
         sb[3:0] <= inst;
-        eot     <= 0;
       end
       S_TX1: begin
         sb[7:4] <= inst;
@@ -763,10 +761,9 @@ always @(posedge clk) begin
       S_TX2: ;
       S_SAVE0: begin
         addra <= inst;
-        addrb <= wk[4:0];
       end
       S_SAVE1: begin
-        addrb <= addrb + inst;
+        addrb <= inst;
         if (addra == 15) begin
           connected <= inst != 0;
           conct     <= 0;
@@ -780,6 +777,7 @@ always @(posedge clk) begin
       S_LOAD1: ;
       S_LOAD2: begin
         wk <= load_data;
+        sb <= load_data;
       end
       default: ;
     endcase
@@ -804,7 +802,8 @@ always @(posedge clk) begin
         nrzrxct <= 0;
       if (ukprdy && bitaddr[2:0] == 3'b000) begin  // strobe whenever we have a full byte ready
         ukpdat <= data;
-        ukpstb <= 1;
+        if (wk >= 15)  // ignore last two bytes (CRC of last part-packet)
+          ukpstb <= 1;
       end
     end
 
@@ -830,12 +829,8 @@ always @(posedge clk) begin
         up <= sb[{sadr[2] | ~polarity, sadr[1:0]}];
         um <= sb[{sadr[2] |  polarity, sadr[1:0]}];
       end
-      if (nrztxct != 6) begin
-        if (sadr > 0)
-          sadr <= sadr - 1;
-        else
-          eot <= 1;
-      end
+      if (nrztxct != 6 && sadr > 0)
+        sadr <= sadr - 1;
     end
   end
 end
