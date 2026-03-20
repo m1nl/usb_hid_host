@@ -45,7 +45,7 @@ w200ms:
     call setup00
     call get_device
     call rcvdt
-    ldi 144               ; receive 18 bytes of data from device
+    ldi 128               ; receive 16 bytes of data from device
     start                 ; mark start of read transaction
 
 ; IN(0,0), ACK(), device descriptor
@@ -57,7 +57,7 @@ wait_get_device:
     bnak wait_get_device
     call sendack
     bnz wait_get_device
-    ldi 8                 ; set packet offset
+; the buffer wraps, start reading from byte 8
     save 0 0              ; idVendor lsb
     save 1 1              ; idVendor msb
     save 2 2              ; idProduct lsb
@@ -81,10 +81,10 @@ wait_get_config:
     bnak wait_get_config
     call sendack
     bnz wait_get_config
-    ldi 14                ; set packet offset
-    save 4 0              ; interface class
-    save 5 1              ; interface sub-class
-    save 6 2              ; interface protocol
+; the buffer wraps, start reading from byte 14
+    save 4 6               ; interface class
+    save 5 7               ; interface sub-class
+    save 6 0               ; interface protocol
 
 ; ---- initialization sequence
     call reset            ; reset device again
@@ -251,10 +251,10 @@ get_device:               ; get device descriptor of (0,0)
     outb 0x01             ; Desc Type=1 (device)
     outb 0x00             ; Language ID=0
     outb 0x00             ;
-    outb 0x12             ; wLength=18
+    outb 0x10             ; wLength=16
     outb 0x00
-    outb 0xe0             ; CRC16
-    outb 0xf4
+    outb 0xe1             ; CRC16
+    outb 0x94
     out4 0x03             ; EOP
     hiz
     ret
@@ -374,7 +374,7 @@ xinput_magic:
     ret
 
 rcvdt:
-    ldi 72                ; receive up to 9 bytes of data from device by default
+    ldi 64                ; receive up to 8 bytes of data from device by default
 rcvdt2:
     in
 rcvdt_eop:

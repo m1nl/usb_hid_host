@@ -67,7 +67,7 @@ wire       ukpstb;
 wire       ukpstart;
 wire [7:0] ukpdat;
 wire [3:0] addra;
-wire [4:0] addrb;
+wire [3:0] addrb;
 wire       save;
 wire       load;
 wire       connected;
@@ -109,9 +109,9 @@ reg [7:0] out_payload [0:1];  // USB OUT request payload data for endpoint speci
 reg       x_input;            // indicates if pad should be polled in X-Input mode
 reg [7:0] polling_interval;   // polling interval in ms
 
-reg [7:0] dat [0:17];         // data in last response (up to 18 bytes to address entire GET_DESCRIPTOR response)
-reg [7:0] regs [0:7];         // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL)
-reg [4:0] rcvct;
+reg [7:0] dat  [0:7];         // data in last response (up to 8 bytes, wraps-around)
+reg [7:0] regs [0:7];         // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL), 7 (UNUSED)
+reg [2:0] rcvct;
 reg [1:0] typ_next;
 reg       ukprdy_r;
 
@@ -130,8 +130,7 @@ always @(posedge clk) begin
       regs[i] <= 8'b0;
 
   end else if (save) begin
-    if (addra < 8 && addrb < 18)
-      regs[addra[2:0]] <= dat[addrb];
+    regs[addra[2:0]] <= dat[addrb[2:0]];
 
   end else if (load) begin
     if (addra < 8)
@@ -156,7 +155,7 @@ integer j;
 // handle ukp data from packets
 always @(posedge clk) begin
   if (reset || connerr) begin
-    for (j = 0; j < 18; j = j + 1)
+    for (j = 0; j < 8; j = j + 1)
       dat[j] <= 8'b0;
 
     ukprdy_r    <= 0;
@@ -173,10 +172,8 @@ always @(posedge clk) begin
     full_report <= 0;
 
     if (ukpstb) begin
-      if (rcvct < 20)  // 18 data bytes plus CRC16
-        rcvct <= rcvct + 1;
-      if (rcvct < 18)
-        dat[rcvct] <= ukpdat; // record byte from a packet
+      rcvct      <= rcvct + 1;
+      dat[rcvct] <= ukpdat;  // record byte from a packet
     end
   end else begin
     ukprdy_r    <= ukprdy;
@@ -184,12 +181,12 @@ always @(posedge clk) begin
     typ         <= connected ? typ_next : 0;
 
     if (ukprdy_r) begin  // individual packet received
-      rcvct       <= rcvct - 2;   // ignore CRC16
+      rcvct       <= rcvct - 2;   // ignore CRC16, important when packets are split
       full_report <= (typ != 0);  // strobe when connected
     end
 
     if (connected && typ != typ_next) begin
-      for (j = 0; j < 18; j = j + 1)
+      for (j = 0; j < 8; j = j + 1)
         dat[j] <= 8'b0;
 
       full_report <= 1;  // send empty report on connection state change
@@ -203,12 +200,12 @@ always @(*) begin
   x_input  = 0;
 
   casez ({regs[4], regs[5], regs[6]})  // INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL
-    {8'h03, 8'h01, 8'h01}: typ_next = 1;  // keyboard
-    {8'h03, 8'h01, 8'hzz}: typ_next = 2;  // mouse
-    {8'h03, 8'hzz, 8'hzz}: typ_next = 3;  // other (incl. 8BitDo, D-Input)
+    {8'h03, 8'h01, 8'h01}: if (KEYBOARD_SUPPORT) typ_next = 1;  // keyboard
+    {8'h03, 8'h01, 8'hzz}: if (MOUSE_SUPPORT)    typ_next = 2;  // mouse
+    {8'h03, 8'hzz, 8'hzz}: if (GAME_SUPPORT)     typ_next = 3;  // other (incl. 8BitDo, D-Input)
     {8'hff, 8'h5d, 8'h01},
     {8'hff, 8'h5d, 8'h81}: begin
-      typ_next = 3;
+      if (GAME_SUPPORT) typ_next = 3;
       x_input  = 1;
     end  // Xbox 360 (incl. 8BitDo, X-Input); wired - protocol 1, wireless - protocol 129
   endcase
@@ -301,7 +298,7 @@ always @(*) begin
           {game_y, game_x, game_b, game_a} = dat[3][7:4];  // buttons
           {game_sel, game_sta} = {dat[2][5], dat[2][4]};   // - +
 
-          {game_r, game_l, game_d, game_u} = {dat[2][3:0]}; // d-pad
+          {game_r, game_l, game_d, game_u} = {dat[2][3:0]};  // d-pad
 
           game_d = game_d || dat[3][0];  // lb
           game_u = game_u || dat[3][1];  // rb
@@ -354,7 +351,7 @@ module ukp #(
   output reg  [7:0] ukpdat,   // output data when ukpstb = 1
 
   output reg  [3:0] addra,
-  output reg  [4:0] addrb,
+  output reg  [3:0] addrb,
   output reg        save,
   output reg        load,
   input  wire [7:0] load_data,
@@ -764,10 +761,9 @@ always @(posedge clk) begin
       S_TX2: ;
       S_SAVE0: begin
         addra <= inst;
-        addrb <= wk[4:0];
       end
       S_SAVE1: begin
-        addrb <= addrb + inst;
+        addrb <= inst;
         if (addra == 15) begin
           connected <= inst != 0;
           conct     <= 0;
@@ -806,7 +802,8 @@ always @(posedge clk) begin
         nrzrxct <= 0;
       if (ukprdy && bitaddr[2:0] == 3'b000) begin  // strobe whenever we have a full byte ready
         ukpdat <= data;
-        ukpstb <= 1;
+        if (wk >= 15)  // ignore last two bytes (CRC of last part-packet)
+          ukpstb <= 1;
       end
     end
 

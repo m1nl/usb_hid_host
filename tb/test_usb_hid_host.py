@@ -1,12 +1,13 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge, Timer
+
 from usb_line_driver import UsbLineDriver
 
 
 @cocotb.test()
 async def test_usb_hid_host_reset(dut):
-    clock = Clock(dut.clk, 16.667, unit="ns")
+    clock = Clock(dut.clk, 16.666, unit="ns")
     usb = UsbLineDriver(dut, "clk", "usb_dp_i", "usb_dm_i", speed=UsbLineDriver.FULL_SPEED)
 
     cocotb.start_soon(clock.start())
@@ -29,7 +30,7 @@ async def test_usb_hid_host_reset(dut):
     KEYBOARD_DEVICE_DESCRIPTOR_0 = bytes(
         [
             0xC3,  # DATA0
-            0x12,  # bLength: 18 bytes
+            0x10,  # bLength: 16 bytes
             0x01,  # bDescriptorType: DEVICE
             0x00,
             0x02,  # bcdUSB: USB 2.0
@@ -80,9 +81,9 @@ async def test_usb_hid_host_reset(dut):
 
     await ClockCycles(dut.clk, 1200)
 
-    await usb.send_packet(KEYBOARD_DEVICE_DESCRIPTOR_2)
+    #    await usb.send_packet(KEYBOARD_DEVICE_DESCRIPTOR_2)
 
-    await ClockCycles(dut.clk, 1720)
+    #    await ClockCycles(dut.clk, 1720)
 
     await usb.send_packet(bytes([0xA5, 0x5A]))
 
