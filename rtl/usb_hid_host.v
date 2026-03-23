@@ -376,19 +376,19 @@ wire       di;
 wire       dbit;
 wire       timing_0, timing_1, timing_rx;
 
-reg  [3:0] insth;
+reg  [3:0] insth;  // current instruction
 reg  [7:0] wk;  // W register
 reg  [7:0] sb;  // out value
 reg  [2:0] sadr;  // out4 / outb write ptr
-reg  [2:0] timing;  // T register (0~7)
-reg  [2:0] prescaler;  // clock prescaler for low-speed
-reg  [3:0] lb4;
-reg [15:0] interval = 1;
-reg  [7:0] delay    = 1;
+reg  [3:0] lb4;  // instruction operand
 reg  [7:0] data;  // received data
 reg  [2:0] nrztxct, nrzrxct;  // NRZI trans/recv count for bit stuffing
-reg  [9:0] conct;
 reg  [8:0] bitaddr;  // 0~512
+reg  [2:0] timing;  // T register (0~7)
+reg  [2:0] prescaler;  // clock prescaler for low-speed
+reg [15:0] interval = 1;  // frame interval counter
+reg  [7:0] delay    = 1;  // inter-packet delay counter
+reg  [9:0] conct;  // watchdog counter
 
 reg eop, ug, up, um, did, dis, cond, eot, nak, stall;
 
@@ -410,8 +410,8 @@ wire interval_frame = interval == (FULL_SPEED ? 60000 : 12000);
 wire delay_min = 1;
 wire delay_max = 0;
 `else
-wire delay_min = delay >= (FULL_SPEED && full_speed ? 10 : 16);  //  2 bit time
-wire delay_max = delay >= (FULL_SPEED && full_speed ? 90 : 144); // 18 bit time
+wire delay_min = delay >= (FULL_SPEED && full_speed ? 10 : 16);   //  2 x bit time
+wire delay_max = delay >= (FULL_SPEED && full_speed ? 90 : 144);  // 18 x bit time
 `endif
 
 assign polarity = full_speed;
@@ -423,9 +423,9 @@ assign usb_oe   = ug;
 assign connerr = (&conct) && (di || connected);
 
 // input filter
-localparam RX_FILTER  = 5;
-localparam EOP_FILTER = 3;
-localparam SUM_WIDTH  = $clog2(RX_FILTER + 1) + 1;
+localparam RX_FILTER  = 3;  // last 3 samples
+localparam EOP_FILTER = 2;  // last 2 samples
+localparam SUM_WIDTH  = $clog2(RX_FILTER + 1) + 1;  // +/- 3 range
 
 integer i;
 
@@ -627,7 +627,7 @@ always @(*) begin
       S_LOAD2: begin
         if (insth == 10) begin  // op=OUTR
           state_next = S_TX2;
-          pc_next    = pc;
+          pc_next = pc;
         end else
           state_next = S_OPCODE;
       end
