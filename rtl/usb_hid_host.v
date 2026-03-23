@@ -366,6 +366,90 @@ module ukp #(
   output wire busy
 );
 
+wire [3:0] inst;
+wire       polarity;
+wire       sample;
+wire       transmission;
+wire       data01;
+wire       payload;
+wire       di;
+wire       dbit;
+wire       timing_0, timing_1, timing_rx;
+
+reg  [3:0] insth;
+reg  [7:0] wk;  // W register
+reg  [7:0] sb;  // out value
+reg  [2:0] sadr;  // out4 / outb write ptr
+reg  [2:0] timing;  // T register (0~7)
+reg  [2:0] prescaler;  // clock prescaler for low-speed
+reg  [3:0] lb4;
+reg [15:0] interval = 1;
+reg  [7:0] delay    = 1;
+reg  [7:0] data;  // received data
+reg  [2:0] nrztxct, nrzrxct;  // NRZI trans/recv count for bit stuffing
+reg  [9:0] conct;
+reg  [8:0] bitaddr;  // 0~512
+
+reg eop, ug, up, um, did, dis, cond, eot, nak, stall;
+
+reg [RX_FILTER-1:0] dpi, dmi;
+
+reg signed [SUM_WIDTH-1:0] dsum, sum;
+
+reg [4:0] state, state_next;
+reg [9:0] pc, pc_next;
+reg [9:0] wpc [0:1];
+
+`ifdef VERILATOR
+wire interval_frame = interval == 30;
+`else
+wire interval_frame = interval == (FULL_SPEED ? 60000 : 12000);
+`endif
+
+`ifdef VERILATOR
+wire delay_min = 1;
+wire delay_max = 0;
+`else
+wire delay_min = delay >= (FULL_SPEED && full_speed ? 10 : 16);  //  2 bit time
+wire delay_max = delay >= (FULL_SPEED && full_speed ? 90 : 144); // 18 bit time
+`endif
+
+assign polarity = full_speed;
+
+assign usb_dp_o = up;
+assign usb_dm_o = um;
+assign usb_oe   = ug;
+
+assign connerr = (&conct) && (di || connected);
+
+// input filter
+localparam RX_FILTER  = 5;
+localparam EOP_FILTER = 3;
+localparam SUM_WIDTH  = $clog2(RX_FILTER + 1) + 1;
+
+integer i;
+
+always @(*) begin
+  sum = 0;
+
+  for (i = 0; i < RX_FILTER; i++)
+    sum = sum
+      + {{(SUM_WIDTH-1){1'b0}}, dpi[i]}
+      - {{(SUM_WIDTH-1){1'b0}}, dmi[i]};
+end
+
+always @(posedge clk) begin
+  dpi <= {dpi[RX_FILTER-2:0], usb_dp_i};
+  dmi <= {dmi[RX_FILTER-2:0], usb_dm_i};
+
+  dsum <= sum;
+  eop  <= dpi[EOP_FILTER-1:0] == dmi[EOP_FILTER-1:0];
+end
+
+assign di   = (dsum < 0) ^ polarity;
+assign dbit = sb[7 - sadr[2:0]];
+
+// state machine
 localparam S_OPCODE = 0;
 localparam S_SYNC   = 1;
 localparam S_WAIT   = 2;
@@ -387,59 +471,6 @@ localparam S_LOAD0  = 17;
 localparam S_LOAD1  = 18;
 localparam S_LOAD2  = 19;
 
-wire [3:0] inst;
-wire       polarity;
-wire       sample;
-wire       transmission;
-wire       data01;
-wire       payload;
-wire       eop;
-wire       di;
-wire       dbit;
-wire       timing_0, timing_1, timing_2, timing_3, timing_rx;
-
-reg  [3:0] insth;
-reg  [7:0] wk;  // W register
-reg  [7:0] sb;  // out value
-reg  [2:0] sadr;  // out4 / outb write ptr
-reg  [2:0] timing;  // T register (0~7)
-reg  [2:0] prescaler;  // clock prescaler for low-speed
-reg  [3:0] lb4;
-reg [15:0] interval;
-reg  [7:0] data;  // received data
-reg  [2:0] nrztxct, nrzrxct;  // NRZI trans/recv count for bit stuffing
-reg  [9:0] conct;
-reg  [8:0] bitaddr;  // 0~512
-
-reg ug, up, um, dpi, dmi, dis, did, cond, eot, nak, stall;
-
-`ifdef VERILATOR
-wire interval_frame = interval == 30;
-`else
-wire interval_frame = interval == (FULL_SPEED ? 60000 : 12000);
-`endif
-
-assign polarity = full_speed;
-
-assign di   = polarity ? dpi : dmi;
-assign dbit = sb[7 - sadr[2:0]];
-
-assign usb_dp_o = up;
-assign usb_dm_o = um;
-assign usb_oe   = ug;
-
-assign connerr = (&conct) && (di || connected);
-
-// register inputs
-always @(posedge clk) begin
-  dpi <= usb_dp_i;
-  dmi <= usb_dm_i;
-end
-
-reg [4:0] state, state_next;
-reg [9:0] pc, pc_next;
-reg [9:0] wpc [0:1];
-
 assign inst     = rom_dout;
 assign rom_addr = pc_next;
 assign rom_en   = state_next != S_SYNC &&
@@ -453,13 +484,10 @@ assign rom_en   = state_next != S_SYNC &&
 
 assign timing_0  = timing == 0 && prescaler == 0;
 assign timing_1  = timing == 1 && prescaler == 0;
-assign timing_2  = timing == 2 && prescaler == 0;
-assign timing_3  = timing == 3 && prescaler == 0;
-assign timing_rx = (FULL_SPEED && full_speed) ? timing_2 : timing_3;
+assign timing_rx = timing == (RX_FILTER - 1) && prescaler == 0;
 
 assign sample       = state == S_RX1 && timing_rx;
 assign transmission = state == S_TX2 && timing_0;
-assign eop          = dpi == dmi;  // EOP or ERR
 
 // following flags have to be combined with sample
 assign data01  = bitaddr == 16 && (data[3:0] == 4'b0011 || data[3:0] == 4'b1011);
@@ -470,7 +498,7 @@ assign busy = insth != 14;  // op!=WAIT
 // branch condition
 always @(*) begin
   case (inst)
-    0: cond = eop || (connected && !di) || (!FULL_SPEED && !dmi);  // op=BE
+    0: cond = eop || (connected && !di) || (!FULL_SPEED && (|dpi));  // op=BE
     1: cond = connected;  // op=BC
     2: cond = nak;  // op=BNAK
     3: cond = stall;  // op=BSTALL
@@ -530,7 +558,7 @@ always @(*) begin
         endcase
       end
       S_SYNC: begin
-        if (timing_1)
+        if (timing_1 && delay_min)
           state_next = S_OPCODE;
         else
           pc_next = pc;
@@ -559,6 +587,8 @@ always @(*) begin
       S_RX0: begin
         if (!di)
           state_next = S_RX1;
+        else if (delay_max)  // timeout
+          state_next = S_SYNC;
         else
           pc_next = pc;
       end
@@ -568,7 +598,7 @@ always @(*) begin
           state_next = S_SYNC;
       end
       S_RX1: begin
-        if (sample && eop)
+        if (timing_rx && eop)
           state_next = S_SYNC;
         else
           pc_next = pc;
@@ -618,6 +648,7 @@ always @(posedge clk) begin
     eot <= 0;
     ug <= 0;
     interval <= 1;
+    delay <= 1;
     full_speed <= FULL_SPEED;
     save <= 0;
     load <= 0;
@@ -640,8 +671,8 @@ always @(posedge clk) begin
 
     // oversampling - 8 for low-speed, 5 for high-speed
     did <= di;
-    if (!ug && di != did)
-      timing <= 0;
+    if (!ug && did != di)
+      timing <= RX_FILTER - 2;
     else if (prescaler == 0) begin
       timing <= timing + 1;
 
@@ -654,6 +685,10 @@ always @(posedge clk) begin
       interval <= 1;
     else
       interval <= interval + 1;
+
+    // inter-packet delay
+    if (!delay_max && prescaler == 0)
+      delay <= delay + 1;
 
     // WDT (data byte valid or connected and NAK)
     if (ukpstb || (connected && nak))
@@ -718,7 +753,7 @@ always @(posedge clk) begin
         case (inst)
           0: begin
             if (!cond && !connected && FULL_SPEED)
-              full_speed <= dpi;
+              full_speed <= dpi[0];
           end  // op=BE
           default: ;
         endcase
@@ -742,14 +777,16 @@ always @(posedge clk) begin
         ukprdy  <= 0;
       end
       S_RX1: begin
-        if (sample) begin
+        if (timing_rx) begin
           if (data01) begin
             wk     <= wk - 1 + 16;  // increase by size of CRC16
             ukprdy <= 1;            // mark valid packet bytes
           end else if (payload && wk > 0)
             wk <= wk - 1;
-          else if (eot)
+          else if (eot) begin
             ukprdy <= 0;
+            delay  <= 1;
+          end
         end
       end
       S_TX0: begin
@@ -758,7 +795,9 @@ always @(posedge clk) begin
       S_TX1: begin
         sb[7:4] <= inst;
       end
-      S_TX2: ;
+      S_TX2: begin
+        delay <= 1;
+      end
       S_SAVE0: begin
         addra <= inst;
       end
