@@ -383,7 +383,8 @@ reg  [2:0] sadr;  // out4 / outb write ptr
 reg  [2:0] timing;  // T register (0~7)
 reg  [2:0] prescaler;  // clock prescaler for low-speed
 reg  [3:0] lb4;
-reg [15:0] interval;
+reg [15:0] interval = 1;
+reg  [7:0] delay    = 1;
 reg  [7:0] data;  // received data
 reg  [2:0] nrztxct, nrzrxct;  // NRZI trans/recv count for bit stuffing
 reg  [9:0] conct;
@@ -403,6 +404,14 @@ reg [9:0] wpc [0:1];
 wire interval_frame = interval == 30;
 `else
 wire interval_frame = interval == (FULL_SPEED ? 60000 : 12000);
+`endif
+
+`ifdef VERILATOR
+wire delay_min = 1;
+wire delay_max = 0;
+`else
+wire delay_min = delay >= (FULL_SPEED && full_speed ? 10 : 16);  //  2 bit time
+wire delay_max = delay >= (FULL_SPEED && full_speed ? 90 : 144); // 18 bit time
 `endif
 
 assign polarity = full_speed;
@@ -549,7 +558,7 @@ always @(*) begin
         endcase
       end
       S_SYNC: begin
-        if (timing_1)
+        if (timing_1 && delay_min)
           state_next = S_OPCODE;
         else
           pc_next = pc;
@@ -578,6 +587,8 @@ always @(*) begin
       S_RX0: begin
         if (!di)
           state_next = S_RX1;
+        else if (delay_max)  // timeout
+          state_next = S_SYNC;
         else
           pc_next = pc;
       end
@@ -637,6 +648,7 @@ always @(posedge clk) begin
     eot <= 0;
     ug <= 0;
     interval <= 1;
+    delay <= 1;
     full_speed <= FULL_SPEED;
     save <= 0;
     load <= 0;
@@ -673,6 +685,10 @@ always @(posedge clk) begin
       interval <= 1;
     else
       interval <= interval + 1;
+
+    // inter-packet delay
+    if (!delay_max && prescaler == 0)
+      delay <= delay + 1;
 
     // WDT (data byte valid or connected and NAK)
     if (ukpstb || (connected && nak))
@@ -761,14 +777,16 @@ always @(posedge clk) begin
         ukprdy  <= 0;
       end
       S_RX1: begin
-        if (sample) begin
+        if (timing_rx) begin
           if (data01) begin
             wk     <= wk - 1 + 16;  // increase by size of CRC16
             ukprdy <= 1;            // mark valid packet bytes
           end else if (payload && wk > 0)
             wk <= wk - 1;
-          else if (eot)
+          else if (eot) begin
             ukprdy <= 0;
+            delay  <= 1;
+          end
         end
       end
       S_TX0: begin
@@ -777,7 +795,9 @@ always @(posedge clk) begin
       S_TX1: begin
         sb[7:4] <= inst;
       end
-      S_TX2: ;
+      S_TX2: begin
+        delay <= 1;
+      end
       S_SAVE0: begin
         addra <= inst;
       end
