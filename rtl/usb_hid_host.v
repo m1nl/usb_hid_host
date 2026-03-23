@@ -432,7 +432,7 @@ integer i;
 always @(*) begin
   sum = 0;
 
-  for (i = 0; i < RX_FILTER; i++)
+  for (i = 0; i < RX_FILTER; i = i + 1)
     sum = sum
       + {{(SUM_WIDTH-1){1'b0}}, dpi[i]}
       - {{(SUM_WIDTH-1){1'b0}}, dmi[i]};
