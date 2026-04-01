@@ -366,6 +366,11 @@ module ukp #(
   output wire busy
 );
 
+// input filter parameters
+localparam RX_FILTER  = 3;  // last 3 samples
+localparam EOP_FILTER = 2;  // last 2 samples
+localparam SUM_WIDTH  = $clog2(RX_FILTER + 1) + 1;  // +/- 3 range
+
 wire [3:0] inst;
 wire       polarity;
 wire       sample;
@@ -421,11 +426,6 @@ assign usb_dm_o = um;
 assign usb_oe   = ug;
 
 assign connerr = (&conct) && (di || connected);
-
-// input filter
-localparam RX_FILTER  = 3;  // last 3 samples
-localparam EOP_FILTER = 2;  // last 2 samples
-localparam SUM_WIDTH  = $clog2(RX_FILTER + 1) + 1;  // +/- 3 range
 
 integer i;
 
