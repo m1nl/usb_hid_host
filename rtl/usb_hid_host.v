@@ -114,6 +114,7 @@ reg [7:0] regs [0:7];         // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (
 reg [2:0] rcvct;
 reg [1:0] typ_next;
 reg       ukprdy_r;
+reg       connected_r;
 
 wire [15:0] vid = {regs[1], regs[0]};
 wire [15:0] pid = {regs[3], regs[2]};
@@ -159,6 +160,7 @@ always @(posedge clk) begin
       dat[j] <= 8'b0;
 
     ukprdy_r    <= 0;
+    connected_r <= 0;
     typ         <= 0;
     full_report <= connerr;  // send empty report on connection error
     rcvct       <= 0;
@@ -177,19 +179,24 @@ always @(posedge clk) begin
     end
   end else begin
     ukprdy_r    <= ukprdy;
+    connected_r <= connected;
     full_report <= 0;
-    typ         <= connected ? typ_next : 0;
 
-    if (ukprdy_r) begin  // individual packet received
-      rcvct       <= rcvct - 2;   // ignore CRC16, important when packets are split
-      full_report <= (typ != 0);  // strobe when connected
+    if (ukprdy_r) begin     // individual packet received, ukprdy is not asserted
+      rcvct <= rcvct - 2;   // ignore CRC16, important when packets are split
+
+      if (connected) begin  // change typ after a first valid report
+        typ         <= typ_next;
+        full_report <= 1;
+      end
     end
 
-    if (connected && typ != typ_next) begin
+    // send empty report on connection state change
+    if (connected && !connected_r) begin
       for (j = 0; j < 8; j = j + 1)
         dat[j] <= 8'b0;
 
-      full_report <= 1;  // send empty report on connection state change
+      full_report <= 1;
     end
   end
 end
