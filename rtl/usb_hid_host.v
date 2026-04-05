@@ -49,8 +49,9 @@ module usb_hid_host #(
   output reg signed [7:0] mouse_dy,  // signed 8-bit, valid during full_report pulse
 
   // gamepad
-  output reg game_l, game_r, game_u, game_d,                      // left right up down
-  output reg game_a, game_b, game_x, game_y, game_sel, game_sta,  // buttons
+  output reg       game_l, game_r, game_u, game_d,                      // left right up down
+  output reg       game_a, game_b, game_x, game_y, game_sel, game_sta,  // buttons
+  output reg [3:0] game_extra,                                          // extra buttons
 
   // debug
   output wire [63:0] dbg_hid_report,  // last HID report
@@ -272,6 +273,7 @@ always @(*) begin
   {game_l, game_r, game_u, game_d} = {1'b0, 1'b0, 1'b0, 1'b0};
   {game_y, game_x, game_b, game_a} = {1'b0, 1'b0, 1'b0, 1'b0};
   {game_sel, game_sta} = {1'b0, 1'b0};
+  game_extra = 4'b0;
 
   if (KEYBOARD_SUPPORT && typ == 1) begin
     {key_modifiers, key_0, key_1, key_2, key_3} = {dat[0], dat[2], dat[3], dat[4], dat[5]};
@@ -281,7 +283,6 @@ always @(*) begin
 
   end else if (GAME_SUPPORT && typ == 3) begin
     casez ({x_input, vid, pid})
-      {1'bz, 16'h2dc8, 16'h301c}: ;  // 8BitDo, idle
       {1'b0, 16'h2dc8, 16'hzzzz}: begin  // 8BitDo, assume generic D-Input
         {game_y, game_x, game_b, game_a} = {dat[1][4:3], dat[1][1:0]};  // buttons
         {game_sel, game_sta} = {dat[2][2], dat[2][3]};                  // - +
@@ -294,11 +295,8 @@ always @(*) begin
           game_r = (hat == 3'd1 || hat == 3'd2 || hat == 3'd3);
         end
 
-        game_d = game_d || dat[1][6];  // lb
-        game_u = game_u || dat[1][7];  // rb
-
-        game_a = game_a || dat[2][0];  // lt
-        game_b = game_b || dat[2][1];  // rt
+        // lt, lb, rt, rb
+        game_extra = {dat[2][0], dat[1][6], dat[2][1], dat[1][7]};
       end
       {1'b1, 16'hzzzz, 16'hzzzz}: begin  // Xbox 360 - compatible (X-Input)
         if (dat[0] == 8'h00) begin  // valid pad data
@@ -307,11 +305,8 @@ always @(*) begin
 
           {game_r, game_l, game_d, game_u} = {dat[2][3:0]};  // d-pad
 
-          game_d = game_d || dat[3][0];  // lb
-          game_u = game_u || dat[3][1];  // rb
-
-          game_a = game_a || (|dat[4]);  // lt
-          game_b = game_b || (|dat[5]);  // rt
+          // l2, l1, r2, r1
+          game_extra = {(|dat[4]), dat[3][0], (|dat[5]), dat[3][1]};
         end
       end
       {1'b0, 16'h0738, 16'h2217}: begin  // SpeedLink COMPETITION PRO Extra
@@ -325,7 +320,7 @@ always @(*) begin
         // - d[3] is X axis (0: left, 255: right)
         // - d[4] is Y axis
         // - d[5][7:4] is buttons YBAX
-        // - d[6][5:4] is buttons START,SELECT
+        // - d[6][5:4] is buttons START, SELECT
 
         {game_l, game_r} = {dat[3][7:6] == 2'b00, dat[3][7:6] == 2'b11};
         {game_u, game_d} = {dat[4][7:6] == 2'b00, dat[4][7:6] == 2'b11};
