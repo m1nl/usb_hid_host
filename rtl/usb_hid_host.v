@@ -202,24 +202,25 @@ always @(posedge clk) begin
   end
 end
 
-// set typ depending on INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL
+// set typ depending on INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL, VID, PID
 always @(*) begin
   typ_next = 0;
   x_input  = 0;
 
-  casez ({regs[4], regs[5], regs[6]})  // INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL
-    {8'h03, 8'h01, 8'h01}: if (KEYBOARD_SUPPORT) typ_next = 1;  // keyboard
-    {8'h03, 8'h01, 8'hzz}: if (MOUSE_SUPPORT)    typ_next = 2;  // mouse
-    {8'h03, 8'hzz, 8'hzz}: if (GAME_SUPPORT)     typ_next = 3;  // other (incl. 8BitDo, D-Input)
-    {8'hff, 8'h5d, 8'h01},
-    {8'hff, 8'h5d, 8'h81}: begin
+  casez ({regs[4], regs[5], regs[6], vid, pid})  // INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL, VID, PID
+    {8'hzz, 8'hzz, 8'hzz, 16'h2dc8, 16'h5201}: if (KEYBOARD_SUPPORT) typ_next = 1;  // 8BitDo Retro Keyboard Receiver
+    {8'h03, 8'h01, 8'h01, 16'hzzzz, 16'hzzzz}: if (KEYBOARD_SUPPORT) typ_next = 1;  // keyboard
+    {8'h03, 8'h01, 8'hzz, 16'hzzzz, 16'hzzzz}: if (MOUSE_SUPPORT)    typ_next = 2;  // mouse
+    {8'h03, 8'hzz, 8'hzz, 16'hzzzz, 16'hzzzz}: if (GAME_SUPPORT)     typ_next = 3;  // other (incl. 8BitDo, D-Input)
+    {8'hff, 8'h5d, 8'h01, 16'hzzzz, 16'hzzzz},
+    {8'hff, 8'h5d, 8'h81, 16'hzzzz, 16'hzzzz}: begin
       if (GAME_SUPPORT) typ_next = 3;
       x_input  = 1;
     end  // Xbox 360 (incl. 8BitDo, X-Input); wired - protocol 1, wireless - protocol 129
   endcase
 end
 
-// set in_payload and out_payload payload depending on vid, pid
+// set in_payload and out_payload payload depending on VID, PID
 // ref: https://rayslogic.com/Propeller/USB.htm#USB%20Token
 always @(*) begin
   casez ({vid, pid})
@@ -241,9 +242,9 @@ always @(*) begin
   endcase
 end
 
-// set polling interval depending on typ, speed, x_input, pid, vid
+// set polling interval depending on typ_next, full_speed, x_input, VID, PID
 always @(*) begin
-  casez ({typ, full_speed, x_input, vid, pid})
+  casez ({typ_next, full_speed, x_input, vid, pid})
     {2'bzz, 1'b0, 1'bz, 16'hzzzz, 16'hzzzz}: begin
       polling_interval = 8'd10;  // 10ms for low-speed devices
     end
@@ -251,7 +252,7 @@ always @(*) begin
       polling_interval = 8'd2;   // 2ms for full-speed mouse
     end
     {2'b01, 1'b1, 1'b0, 16'hzzzz, 16'hzzzz}: begin
-      polling_interval = 8'd8;   // 8ms for full-speed keyboard
+      polling_interval = 8'd1;   // 1ms for full-speed keyboard
     end
     {2'b11, 1'b1, 1'bz, 16'h2dc8, 16'hzzzz}: begin
       polling_interval = 8'd2;   // 2ms for 8BitDo
@@ -260,7 +261,7 @@ always @(*) begin
       polling_interval = 8'd4;   // 4ms for other Xbox-compatible controllers
     end
     default: begin
-      polling_interval = 8'd8;   // 8ms default
+      polling_interval = 8'd8;   // 8ms by default
     end
   endcase
 end
