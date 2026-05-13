@@ -163,6 +163,24 @@ wait_get_hid_report:
     call sendack
     bnz wait_get_hid_report
 get_hid_report_ready:
+
+; SET_PROTOCOL (1, 0)
+    wait
+    call sof
+    call setup10
+    call set_protocol
+    call rcvdt
+
+; IN(1,0), ACK()
+wait_set_protocol:
+    wait
+    call sof
+    call in10
+    call rcvdt
+    bstall set_protocol_ready
+    bnak wait_set_protocol
+    call sendack
+set_protocol_ready:
     bjmp init_finished
 
 xinput_init:
@@ -323,6 +341,23 @@ set_idle:
     outb 0x00
     outb 0xd6             ; CRC16
     outb 0x20
+    out4 0x03             ; EOP
+    hiz
+    ret
+
+set_protocol:
+    outb 0x80             ; SYNC
+    outb 0xc3             ; PID=DATA0
+    outb 0x21             ; bmRequestType=21
+    outb 0x0b             ; bRequest=b (Set_Protocol)
+    outb 0x00             ; wValue=0
+    outb 0x00
+    outb 0x00             ; wIndex=0
+    outb 0x00
+    outb 0x00             ; wLength=0
+    outb 0x00
+    outb 0xc6             ; CRC16
+    outb 0xe0
     out4 0x03             ; EOP
     hiz
     ret
