@@ -41,7 +41,7 @@ module usb_hid_host #(
 
   // keyboard
   output reg [7:0] key_modifiers,
-  output reg [7:0] key_0, key_1, key_2, key_3,
+  output reg [7:0] key_0, key_1, key_2, key_3, key_4, key_5,
 
   // mouse
   output reg [2:0] mouse_btn,        // middle, right, left
@@ -269,7 +269,7 @@ end
 reg [2:0] hat;
 
 always @(*) begin
-  {key_modifiers, key_0, key_1, key_2, key_3} = {8'h00, 8'h00, 8'h00, 8'h00, 8'h00};
+  {key_modifiers, key_0, key_1, key_2, key_3, key_4, key_5} = {8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00};
   {mouse_btn, mouse_dx, mouse_dy} = {3'b000, 8'h00, 8'h00};
   {game_l, game_r, game_u, game_d} = {1'b0, 1'b0, 1'b0, 1'b0};
   {game_y, game_x, game_b, game_a} = {1'b0, 1'b0, 1'b0, 1'b0};
@@ -277,7 +277,7 @@ always @(*) begin
   game_extra = 4'b0;
 
   if (KEYBOARD_SUPPORT && typ == 1) begin
-    {key_modifiers, key_0, key_1, key_2, key_3} = {dat[0], dat[2], dat[3], dat[4], dat[5]};
+    {key_modifiers, key_0, key_1, key_2, key_3, key_4, key_5} = {dat[0], dat[2], dat[3], dat[4], dat[5], dat[6], dat[7]};
 
   end else if (MOUSE_SUPPORT && typ == 2) begin
     {mouse_btn, mouse_dx, mouse_dy} = {dat[0][2:0], dat[1], dat[2]};
