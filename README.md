@@ -12,6 +12,25 @@ This is based on the USB-HID work in:
 
 Huge thanks to the authors.
 
+## Tested devices
+
+Working:
+- 8BitDo Pro 3 utilizing bundled 2.4G wireless dongle
+- 8BitDo Ultimate 2C wireless utilizing bundled 2.4G wireless dongle (non-Bluetooth version)
+- Logitech, Inc. Unifying Receiver w/ Y-R0012 
+- Logitech, Inc. Unifying Receiver w/ K400r
+- SpeedLink COMPETITION PRO Extra USB Joystick
+- Legacy Logitech low-speed mouse
+- IBM Corp. NetVista Full Width Keyboard
+- Keychron C3 Pro
+- Keychron K2
+
+Not working:
+- 8BitDo 8BitDo Retro Keyboard Receiver (2dc8:5201)
+- 8BitDo 8BitDo Retro 87 Adapter X (2dc8:202e)
+
+The 8BitDo retro keyboard does not send report events even after successful enumeration. It appears the keyboard exposes two interfaces (mouse + keyboard), and both must be enumerated before reports start being received. There are also reports that this keyboard supports only NKRO and not 6KRO, despite BOOT protocol support (typically associated with 6KRO) being required by the HID standard. Further work may be done to add support for this keyboard, but no guarantees can be made given the extent of changes that may be required.
+
 ## Design overview
 
 This core is built to handle USB keyboards, mice and gamepads because I found no suitable options for pure FPGA hardware solution.
