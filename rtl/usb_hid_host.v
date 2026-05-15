@@ -208,7 +208,6 @@ always @(*) begin
   x_input  = 0;
 
   casez ({regs[4], regs[5], regs[6], vid, pid})  // INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL, VID, PID
-    {8'hzz, 8'hzz, 8'hzz, 16'h2dc8, 16'h5201}: if (KEYBOARD_SUPPORT) typ_next = 1;  // 8BitDo Retro Keyboard Receiver
     {8'h03, 8'h01, 8'h01, 16'hzzzz, 16'hzzzz}: if (KEYBOARD_SUPPORT) typ_next = 1;  // keyboard
     {8'h03, 8'h01, 8'hzz, 16'hzzzz, 16'hzzzz}: if (MOUSE_SUPPORT)    typ_next = 2;  // mouse
     {8'h03, 8'hzz, 8'hzz, 16'hzzzz, 16'hzzzz}: if (GAME_SUPPORT)     typ_next = 3;  // other (incl. 8BitDo, D-Input)
@@ -371,7 +370,7 @@ module ukp #(
 
 // input filter parameters
 localparam RX_FILTER  = 3;  // last 3 samples
-localparam EOP_FILTER = 2;  // last 2 samples
+localparam EOP_FILTER = 3;
 localparam SUM_WIDTH  = $clog2(RX_FILTER + 1) + 1;  // +/- 3 range
 
 wire [3:0] inst;
@@ -415,11 +414,9 @@ wire interval_frame = interval == (FULL_SPEED ? 60000 : 12000);
 `endif
 
 `ifdef VERILATOR
-wire delay_min = 1;
-wire delay_max = 0;
+wire timeout = 0;
 `else
-wire delay_min = delay >= (FULL_SPEED && full_speed ? 10 : 16);   //  2 x bit time
-wire delay_max = delay >= (FULL_SPEED && full_speed ? 90 : 144);  // 18 x bit time
+wire timeout = delay >= (FULL_SPEED && full_speed ? 90 : 144);  // 18 x bit time
 `endif
 
 assign polarity = full_speed;
@@ -487,7 +484,7 @@ assign rom_en   = state_next != S_SYNC &&
 
 assign timing_0  = timing == 0 && prescaler == 0;
 assign timing_1  = timing == 1 && prescaler == 0;
-assign timing_rx = timing == (RX_FILTER - 1) && prescaler == 0;
+assign timing_rx = timing == 2 && prescaler == 0;
 
 assign sample       = state == S_RX1 && timing_rx;
 assign transmission = state == S_TX2 && timing_0;
@@ -561,7 +558,7 @@ always @(*) begin
         endcase
       end
       S_SYNC: begin
-        if (timing_1 && delay_min)
+        if (timing_1)
           state_next = S_OPCODE;
         else
           pc_next = pc;
@@ -588,9 +585,10 @@ always @(*) begin
         pc_next    = {inst, lb4, 2'b0};
       end
       S_RX0: begin
-        if (!di)
+        // dsum == 0 is undefined
+        if (!di && dsum != 0)
           state_next = S_RX1;
-        else if (delay_max)  // timeout
+        else if (timeout)  // timeout
           state_next = S_SYNC;
         else
           pc_next = pc;
@@ -673,9 +671,10 @@ always @(posedge clk) begin
       prescaler <= 0;
 
     // oversampling - 8 for low-speed, 5 for high-speed
+    // dsum == 0 is undefined
     did <= di;
-    if (!ug && did != di)
-      timing <= RX_FILTER - 2;
+    if (!ug && did != di && dsum != 0)
+      timing <= 1;
     else if (prescaler == 0) begin
       timing <= timing + 1;
 
@@ -690,7 +689,7 @@ always @(posedge clk) begin
       interval <= interval + 1;
 
     // inter-packet delay
-    if (!delay_max && prescaler == 0)
+    if (!timeout && prescaler == 0)
       delay <= delay + 1;
 
     // WDT (data byte valid or connected and NAK)
@@ -733,9 +732,7 @@ always @(posedge clk) begin
               wk <= wk - 1;
           end  // op=DEC
           12: ;  // op=SAVE
-          13: begin
-            dis <= di;
-          end  // op=IN
+          13: ;  // op=IN
           14: ;  // op=WAIT
           15: ;  // op=LOAD
           default: ;
@@ -778,6 +775,7 @@ always @(posedge clk) begin
         nrzrxct <= 0;
         timing  <= 0;
         ukprdy  <= 0;
+        dis     <= 1;
       end
       S_RX1: begin
         if (timing_rx) begin
