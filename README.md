@@ -24,6 +24,8 @@ Working:
 - IBM Corp. NetVista Full Width Keyboard
 - Keychron C3 Pro
 - Keychron K2
+- Holtek Semiconductor, Inc. PS/2 keyboard + mouse controller (04d9:1400)
+- Logitech, Inc. F310 Gamepad (046d:c21d)
 
 Not working:
 - 8BitDo 8BitDo Retro Keyboard Receiver (2dc8:5201)
