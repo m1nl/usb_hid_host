@@ -274,6 +274,7 @@ always @(*) begin
   {game_y, game_x, game_b, game_a} = {1'b0, 1'b0, 1'b0, 1'b0};
   {game_sel, game_sta} = {1'b0, 1'b0};
   game_extra = 4'b0;
+  hat = 3'b0;
 
   if (KEYBOARD_SUPPORT && typ == 1) begin
     {key_modifiers, key_0, key_1, key_2, key_3, key_4, key_5} = {dat[0], dat[2], dat[3], dat[4], dat[5], dat[6], dat[7]};
