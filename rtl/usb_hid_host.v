@@ -290,6 +290,21 @@ always @(*) begin
 
   end else if (GAME_SUPPORT && typ == 3) begin
     casez ({x_input, vid, pid})
+      {1'b0, 16'h2dc8, 16'h9020}: begin  // 8BitDo Micro in D-Input mode
+        {game_y, game_x, game_b, game_a} = {dat[8][4:3], dat[8][1:0]};  // buttons
+        {game_sel, game_sta} = {dat[9][2], dat[9][3]};                  // - +
+
+        if (dat[1][3] == 1'b0) begin
+          hat = dat[1][2:0];  // circular pattern
+          game_u = (hat == 3'd0 || hat == 3'd1 || hat == 3'd7);
+          game_d = (hat == 3'd3 || hat == 3'd4 || hat == 3'd5);
+          game_l = (hat == 3'd5 || hat == 3'd6 || hat == 3'd7);
+          game_r = (hat == 3'd1 || hat == 3'd2 || hat == 3'd3);
+        end
+
+        // L2, L, R2, R
+        game_extra = {dat[9][0], dat[8][6], dat[9][1], dat[8][7]};
+      end
       {1'b0, 16'h2dc8, 16'hzzzz}: begin  // 8BitDo, assume generic D-Input
         {game_y, game_x, game_b, game_a} = {dat[1][4:3], dat[1][1:0]};  // buttons
         {game_sel, game_sta} = {dat[2][2], dat[2][3]};                  // - +
