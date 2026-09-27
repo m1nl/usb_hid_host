@@ -54,7 +54,7 @@ module usb_hid_host #(
   output reg [3:0] game_extra,                                          // extra buttons
 
   // debug
-  output wire [63:0] dbg_hid_report,  // last HID report
+  output wire [127:0] dbg_hid_report,  // last HID report
   output wire [63:0] dbg_hid_regs,    // internal regs
 
   // rom
@@ -110,9 +110,9 @@ reg [7:0] out_payload [0:1];  // USB OUT request payload data for endpoint speci
 reg       x_input;            // indicates if pad should be polled in X-Input mode
 reg [7:0] polling_interval;   // polling interval in ms
 
-reg [7:0] dat  [0:7];         // data in last response (up to 8 bytes, wraps-around)
+reg [7:0] dat  [0:15];        // data in last response (up to 16 bytes, wraps-around)
 reg [7:0] regs [0:7];         // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL), 7 (UNUSED)
-reg [2:0] rcvct;
+reg [3:0] rcvct;
 reg [1:0] typ_next;
 reg       ukprdy_r;
 reg       connected_r;
@@ -120,7 +120,13 @@ reg       connected_r;
 wire [15:0] vid = {regs[1], regs[0]};
 wire [15:0] pid = {regs[3], regs[2]};
 
-assign dbg_hid_report = {dat[7], dat[6], dat[5], dat[4], dat[3], dat[2], dat[1], dat[0]};
+genvar k;
+generate
+  for (k = 0; k < 16; k = k + 1) begin : make_dbg_hid_report
+    assign dbg_hid_report[k*8 +: 8] = dat[k];
+  end
+endgenerate
+
 assign dbg_hid_regs   = {regs[7], regs[6], regs[5], regs[4], regs[3], regs[2], regs[1], regs[0]};
 
 integer i;
@@ -132,7 +138,7 @@ always @(posedge clk) begin
       regs[i] <= 8'b0;
 
   end else if (save) begin
-    regs[addra[2:0]] <= dat[addrb[2:0]];
+    regs[addra[2:0]] <= dat[addrb[3:0]];
 
   end else if (load) begin
     if (addra < 8)
@@ -157,7 +163,7 @@ integer j;
 // handle ukp data from packets
 always @(posedge clk) begin
   if (reset || connerr) begin
-    for (j = 0; j < 8; j = j + 1)
+    for (j = 0; j < 16; j = j + 1)
       dat[j] <= 8'b0;
 
     ukprdy_r    <= 0;
@@ -194,7 +200,7 @@ always @(posedge clk) begin
 
     // send empty report on connection state change
     if (connected && !connected_r) begin
-      for (j = 0; j < 8; j = j + 1)
+      for (j = 0; j < 16; j = j + 1)
         dat[j] <= 8'b0;
 
       full_report <= 1;
@@ -284,6 +290,21 @@ always @(*) begin
 
   end else if (GAME_SUPPORT && typ == 3) begin
     casez ({x_input, vid, pid})
+      {1'b0, 16'h2dc8, 16'h9020}: begin  // 8BitDo Micro in D-Input mode
+        {game_y, game_x, game_b, game_a} = {dat[8][4:3], dat[8][1:0]};  // buttons
+        {game_sel, game_sta} = {dat[9][2], dat[9][3]};                  // - +
+
+        if (dat[1][3] == 1'b0) begin
+          hat = dat[1][2:0];  // circular pattern
+          game_u = (hat == 3'd0 || hat == 3'd1 || hat == 3'd7);
+          game_d = (hat == 3'd3 || hat == 3'd4 || hat == 3'd5);
+          game_l = (hat == 3'd5 || hat == 3'd6 || hat == 3'd7);
+          game_r = (hat == 3'd1 || hat == 3'd2 || hat == 3'd3);
+        end
+
+        // L2, L, R2, R
+        game_extra = {dat[9][0], dat[8][6], dat[9][1], dat[8][7]};
+      end
       {1'b0, 16'h2dc8, 16'hzzzz}: begin  // 8BitDo, assume generic D-Input
         {game_y, game_x, game_b, game_a} = {dat[1][4:3], dat[1][1:0]};  // buttons
         {game_sel, game_sta} = {dat[2][2], dat[2][3]};                  // - +

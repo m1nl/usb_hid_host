@@ -26,7 +26,7 @@ module usb_hid_host_tb_top #(
   output wire game_l, game_r, game_u, game_d,
   output wire game_a, game_b, game_x, game_y, game_sel, game_sta,
 
-  output wire [63:0] dbg_hid_report,
+  output wire [127:0] dbg_hid_report,
   output wire [63:0] dbg_hid_regs,
 
   output wire [9:0] rom_addr,

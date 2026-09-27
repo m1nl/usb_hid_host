@@ -57,11 +57,11 @@ wait_get_device:
     bnak wait_get_device
     call sendack
     bnz wait_get_device
-; the buffer wraps, start reading from byte 8
-    save 0 0              ; idVendor lsb
-    save 1 1              ; idVendor msb
-    save 2 2              ; idProduct lsb
-    save 3 3              ; idProduct msb
+; start reading from byte 8
+    save 0 8              ; idVendor lsb
+    save 1 9              ; idVendor msb
+    save 2 10             ; idProduct lsb
+    save 3 11             ; idProduct msb
 
 ; GET_DESCRIPTOR (Configuration, 0)
     wait
@@ -81,10 +81,11 @@ wait_get_config:
     bnak wait_get_config
     call sendack
     bnz wait_get_config
-; the buffer wraps, start reading from byte 14
-    save 4 6               ; interface class
-    save 5 7               ; interface sub-class
-    save 6 0               ; interface protocol
+; start reading from byte 14
+    save 4 14               ; interface class
+    save 5 15               ; interface sub-class
+; buffer wraps here
+    save 6 0                ; interface protocol
 
 ; ---- initialization sequence
     call reset            ; reset device again
@@ -229,7 +230,8 @@ connected:
     bnz cstart2
     start                 ; mark start of read transaction
     call in1x
-    call rcvdt
+    ldi 128               ; receive up to 16 bytes of HID report
+    call rcvdt2
     bnak cstart
     call sendack
     bjmp cstart
