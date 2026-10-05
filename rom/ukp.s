@@ -229,7 +229,8 @@ connected:
     bnz cstart2
     start                 ; mark start of read transaction
     call in1x
-    call rcvdt
+    ldi 128               ; receive up to 16 bytes of HID report
+    call rcvdt2
     bnak cstart
     call sendack
     bjmp cstart

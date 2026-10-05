@@ -105,14 +105,17 @@ ukp #(
   .rom_en(rom_en)
 );
 
-reg [7:0] in_payload  [0:1];  // USB IN request payload data for endpoint specific to a given VID, PID
-reg [7:0] out_payload [0:1];  // USB OUT request payload data for endpoint specific to a given VID, PID
-reg       x_input;            // indicates if pad should be polled in X-Input mode
-reg [7:0] polling_interval;   // polling interval in ms
+reg  [7:0] in_payload  [0:1];  // USB IN request payload data for endpoint specific to a given VID, PID
+reg  [7:0] out_payload [0:1];  // USB OUT request payload data for endpoint specific to a given VID, PID
+reg        x_input;            // indicates if pad should be polled in X-Input mode
+reg  [7:0] polling_interval;   // polling interval in ms
+reg [15:0] report_mask;
 
-reg [7:0] dat  [0:7];         // data in last response (up to 8 bytes, wraps-around)
-reg [7:0] regs [0:7];         // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL), 7 (UNUSED)
-reg [2:0] rcvct;
+reg [7:0] dat  [0:7];          // data in last response (up to 8 bytes, wraps-around)
+reg [7:0] regs [0:7];          // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL), 7 (UNUSED)
+reg [3:0] rcvct;
+reg [2:0] dat_idx;
+reg [1:0] crc_tail;
 reg [1:0] typ_next;
 reg       ukprdy_r;
 reg       connected_r;
@@ -165,9 +168,13 @@ always @(posedge clk) begin
     typ         <= 0;
     full_report <= connerr;  // send empty report on connection error
     rcvct       <= 0;
+    dat_idx     <= 0;
+    crc_tail    <= 0;
 
   end else if (ukpstart) begin
     rcvct       <= 0;  // mark start of read transaction
+    dat_idx     <= 0;
+    crc_tail    <= 0;
     full_report <= 0;
 
   end else if (ukprdy) begin
@@ -175,16 +182,29 @@ always @(posedge clk) begin
     full_report <= 0;
 
     if (ukpstb) begin
-      rcvct      <= rcvct + 1;
-      dat[rcvct] <= ukpdat;  // record byte from a packet
+      rcvct <= rcvct + 1;
+
+      if (crc_tail != 0)
+        crc_tail <= crc_tail - 1;
+
+      // record byte from a packet
+      if (report_mask[rcvct]) begin
+        dat[dat_idx] <= ukpdat;
+        dat_idx      <= dat_idx + 1;
+        crc_tail     <= crc_tail != 2 ? crc_tail + 1 : 2;
+      end
     end
   end else begin
     ukprdy_r    <= ukprdy;
     connected_r <= connected;
     full_report <= 0;
 
-    if (ukprdy_r) begin     // individual packet received, ukprdy is not asserted
-      rcvct <= rcvct - 2;   // ignore CRC16, important when packets are split
+    // individual packet received, ukprdy is not asserted
+    if (ukprdy_r) begin
+      // ignore CRC16, important when packets are split
+      rcvct   <= rcvct - 2;
+      // adjust dat index and cut-off CRC bytes
+      dat_idx <= dat_idx - crc_tail;
 
       if (connected) begin  // change typ after a first valid report
         typ         <= typ_next;
@@ -241,6 +261,23 @@ always @(*) begin
   endcase
 end
 
+// set report_mask
+always @(*) begin
+  if (!connected) begin  // Wrap-around when enumeration didn't finish
+      report_mask = 16'b1111111111111111;
+
+  end else begin
+    casez ({typ_next, x_input, vid, pid})
+      {2'b11, 1'b0, 16'h2dc8, 16'h9020}: begin  // 8BitDo Micro in D-Input mode
+        report_mask = 16'b0000001100000010;
+      end
+      default: begin                            // By default assume only 8 bytes in HID report
+        report_mask = 16'b0000000011111111;
+      end
+    endcase
+  end
+end
+
 // set polling interval depending on typ_next, full_speed, x_input, VID, PID
 always @(*) begin
   casez ({typ_next, full_speed, x_input, vid, pid})
@@ -284,6 +321,21 @@ always @(*) begin
 
   end else if (GAME_SUPPORT && typ == 3) begin
     casez ({x_input, vid, pid})
+      {1'b0, 16'h2dc8, 16'h9020}: begin  // 8BitDo Micro in D-Input mode
+        {game_y, game_x, game_b, game_a} = {dat[1][4:3], dat[1][1:0]};  // buttons
+        {game_sel, game_sta} = {dat[2][2], dat[2][3]};                  // - +
+
+        if (dat[0][3] == 1'b0) begin
+          hat = dat[0][2:0];  // circular pattern
+          game_u = (hat == 3'd0 || hat == 3'd1 || hat == 3'd7);
+          game_d = (hat == 3'd3 || hat == 3'd4 || hat == 3'd5);
+          game_l = (hat == 3'd5 || hat == 3'd6 || hat == 3'd7);
+          game_r = (hat == 3'd1 || hat == 3'd2 || hat == 3'd3);
+        end
+
+        // L2, L, R2, R
+        game_extra = {dat[2][0], dat[1][6], dat[2][1], dat[1][7]};
+      end
       {1'b0, 16'h2dc8, 16'hzzzz}: begin  // 8BitDo, assume generic D-Input
         {game_y, game_x, game_b, game_a} = {dat[1][4:3], dat[1][1:0]};  // buttons
         {game_sel, game_sta} = {dat[2][2], dat[2][3]};                  // - +
