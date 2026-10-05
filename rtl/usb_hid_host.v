@@ -138,20 +138,15 @@ always @(posedge clk) begin
     regs[addra[2:0]] <= dat[addrb[2:0]];
 
   end else if (load) begin
-    if (addra < 8)
-      load_data <= regs[addra[2:0]];
-    else if (addra == 8)   // IN payload
-      load_data <= in_payload[0];
-    else if (addra == 9)   // IN payload
-      load_data <= in_payload[1];
-    else if (addra == 10)  // OUT payload
-      load_data <= out_payload[0];
-    else if (addra == 11)  // OUT payload
-      load_data <= out_payload[1];
-    else if (addra == 12)  // X-Input
-      load_data <= x_input ? 8'b1 : 8'b0;
-    else if (addra == 13)  // polling interval
-      load_data <= polling_interval;
+    case (addra)
+      4'd8: load_data <= in_payload[0];
+      4'd9: load_data <= in_payload[1];
+      4'd10: load_data <= out_payload[0];
+      4'd11: load_data <= out_payload[1];
+      4'd12: load_data <= x_input ? 8'b1 : 8'b0;
+      4'd13: load_data <= polling_interval;
+      default: load_data <= regs[addra[2:0]];
+    endcase
   end
 end
 
@@ -458,6 +453,8 @@ reg signed [SUM_WIDTH-1:0] dsum, sum;
 
 reg [4:0] state, state_next;
 reg [9:0] pc, pc_next;
+reg [1:0] pc_step;
+reg pc_override;
 reg [9:0] wpc [0:1];
 
 `ifdef VERILATOR
@@ -571,13 +568,17 @@ end
 
 // state machine combinational
 always @(*) begin
+  pc_step = 2'd1;
+  pc_override = 0;
+  pc_next = 0;
   if (reset || (&conct)) begin
     state_next = S_OPCODE;
+    pc_override = 1;
     pc_next    = 0;
 
   end else begin
     state_next = state;
-    pc_next    = pc + 1;
+
 
     case (state)
       S_OPCODE: begin
@@ -589,10 +590,10 @@ always @(*) begin
           4: ;
           5: begin
             state_next = S_HIZ;
-            pc_next    = pc;
+            pc_step = 2'd0;
           end  // op=HIZ
           6: state_next = S_TX0;  // op=OUTB
-          7: pc_next = wpc[0];  // op=RET
+          7: begin pc_override = 1; pc_next = wpc[0]; end  // op=RET
           8: state_next = S_B0;  // op=CALL
           9: state_next = S_BX;  // op=BX
           10: state_next = S_LOAD0;  // op=OUTR
@@ -600,11 +601,11 @@ always @(*) begin
           12: state_next = S_SAVE0;  // op=SAVE
           13: begin
             state_next = S_RX0;
-            pc_next    = pc;
+            pc_step = 2'd0;
           end  // op=IN
           14: begin
             state_next = S_WAIT;
-            pc_next    = pc;
+            pc_step = 2'd0;
           end  // op=WAIT
           15: state_next = S_LOAD0;  // op=LOAD
           default: ;
@@ -614,13 +615,13 @@ always @(*) begin
         if (timing_1)
           state_next = S_OPCODE;
         else
-          pc_next = pc;
+          pc_step = 2'd0;
       end
       S_WAIT: begin
         if (interval_frame)
           state_next = S_OPCODE;
         else
-          pc_next = pc;
+          pc_step = 2'd0;
       end
       S_LDI0: state_next = S_LDI1;
       S_LDI1: state_next = S_OPCODE;
@@ -629,12 +630,13 @@ always @(*) begin
           state_next = S_B0;
         else begin
           state_next = S_OPCODE;
-          pc_next    = pc + 3;
+          pc_step = 2'd3;
         end
       end
       S_B0: state_next = S_B1;
       S_B1: begin
         state_next = S_OPCODE;
+        pc_override = 1;
         pc_next    = {inst, lb4, 2'b0};
       end
       S_RX0: begin
@@ -644,10 +646,10 @@ always @(*) begin
         else if (timeout)  // timeout
           state_next = S_SYNC;
         else
-          pc_next = pc;
+          pc_step = 2'd0;
       end
       S_HIZ: begin
-        pc_next = pc;
+        pc_step = 2'd0;
         if (timing_0)
           state_next = S_SYNC;
       end
@@ -655,39 +657,41 @@ always @(*) begin
         if (timing_rx && eop)
           state_next = S_SYNC;
         else
-          pc_next = pc;
+          pc_step = 2'd0;
       end
       S_TX0: state_next = S_TX1;
       S_TX1: begin
         state_next = S_TX2;
-        pc_next = pc;
+        pc_step = 2'd0;
       end
       S_TX2: begin
         if (sadr == 0 && timing_0)
           state_next = S_OPCODE;
         else
-          pc_next = pc;
+          pc_step = 2'd0;
       end
       S_SAVE0: state_next = S_SAVE1;
       S_SAVE1: state_next = S_OPCODE;
       S_LOAD0: begin
         state_next = S_LOAD1;
-        pc_next = pc;
+        pc_step = 2'd0;
       end
       S_LOAD1: begin
         state_next = S_LOAD2;
-        pc_next = pc;
+        pc_step = 2'd0;
       end
       S_LOAD2: begin
         if (insth == 10) begin  // op=OUTR
           state_next = S_TX2;
-          pc_next = pc;
+          pc_step = 2'd0;
         end else
           state_next = S_OPCODE;
       end
       default: state_next = S_OPCODE;
     endcase
   end
+  if (!pc_override)
+    pc_next = pc + {8'b0, pc_step};
 end
 
 always @(posedge clk) begin
