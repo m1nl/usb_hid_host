@@ -8,10 +8,10 @@ all: debug
 
 %.json: $(VERILOG_SOURCES)
 	rm -f $(OUTPUT).bit $(OUTPUT).config $(OUTPUT).json
-	yosys -p 'synth_ecp5 -nowidelut -noccu2 -top top -json $@' $^
+	yosys -p 'scratchpad -copy abc9.script.flow3 abc9.script; synth_ecp5 -abc9 -top top -json $@' $^
 
 %.config: %.json icepi-zero.lpf
-	nextpnr-ecp5 --25k --package $(PACKAGE) --lpf icepi-zero.lpf --json $< --textcfg $@ # 2> log.txt
+	nextpnr-ecp5 -r --25k --package $(PACKAGE) --lpf icepi-zero.lpf --json $< --textcfg $@ # 2> log.txt
 	# cat log.txt | grep Device -A 28
 
 %.bit: %.config

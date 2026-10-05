@@ -106,11 +106,12 @@ ukp #(
   .rom_en(rom_en)
 );
 
+reg        hid_device;         // indicates if device is a valid HID device
 reg  [7:0] in_payload  [0:1];  // USB IN request payload data for endpoint specific to a given VID, PID
 reg  [7:0] out_payload [0:1];  // USB OUT request payload data for endpoint specific to a given VID, PID
 reg        x_input;            // indicates if pad should be polled in X-Input mode
-reg  [7:0] polling_interval;   // polling interval in ms
-reg [15:0] report_mask;
+reg  [3:0] polling_interval;   // polling interval in ms
+reg [15:0] report_mask;        // bit mask which allows to selectively pick bytes from report
 
 reg [7:0] dat  [0:7];          // data in last response (up to 8 bytes, wraps-around)
 reg [7:0] regs [0:7];          // 0 (VID_L), 1 (VID_H), 2 (PID_L), 3 (PID_H), 4 (INTERFACE_CLASS), 5 (INTERFACE_SUBCLASS), 6 (INTERFACE_PROTOCOL), 7 (UNUSED)
@@ -145,8 +146,8 @@ always @(posedge clk) begin
       4'd10: load_data <= out_payload[0];
       4'd11: load_data <= out_payload[1];
       4'd12: load_data <= x_input ? 8'b1 : 8'b0;
-      4'd13: load_data <= polling_interval;
-      4'd14: load_data <= {7'b0, (typ_next != 0)};  // supported device for enumeration
+      4'd13: load_data <= {4'b0, polling_interval};
+      4'd14: load_data <= {7'b0, hid_device};
       default: load_data <= regs[addra[2:0]];
     endcase
   end
@@ -220,9 +221,11 @@ always @(posedge clk) begin
 end
 
 // set typ depending on INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL, VID, PID
+reg x_input_i;
+
 always @(*) begin
   typ_next = 0;
-  x_input  = 0;
+  x_input_i  = 0;
 
   casez ({regs[4], regs[5], regs[6], vid, pid})  // INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL, VID, PID
     {8'h03, 8'h01, 8'h01, 16'hzzzz, 16'hzzzz}: if (KEYBOARD_SUPPORT) typ_next = 1;  // keyboard
@@ -231,9 +234,15 @@ always @(*) begin
     {8'hff, 8'h5d, 8'h01, 16'hzzzz, 16'hzzzz},
     {8'hff, 8'h5d, 8'h81, 16'hzzzz, 16'hzzzz}: begin
       if (GAME_SUPPORT) typ_next = 3;
-      x_input  = 1;
+      x_input_i  = 1;
     end  // Xbox 360 (incl. 8BitDo, X-Input); wired - protocol 1, wireless - protocol 129
   endcase
+end
+
+// sample values to improve timing and optimize resource usage
+always @(posedge clk) begin
+  hid_device <= (typ_next != 0);
+  x_input    <= x_input_i;
 end
 
 // set in_payload and out_payload payload depending on VID, PID
@@ -259,46 +268,47 @@ always @(*) begin
 end
 
 // set report_mask
-always @(*) begin
-  if (!connected) begin  // Wrap-around when enumeration didn't finish
-      report_mask = 16'b1111111111111111;
+always @(posedge clk) begin
+  if (!connected || reset) begin  // Wrap-around when enumeration didn't finish
+      report_mask <= 16'b1111111111111111;
 
   end else begin
     casez ({typ_next, x_input, vid, pid})
       {2'b11, 1'b0, 16'h2dc8, 16'h9020}: begin  // 8BitDo Micro in D-Input mode
-        report_mask = 16'b0000001100000010;
+        report_mask <= 16'b0000001100000010;
       end
       default: begin                            // By default assume only 8 bytes in HID report
-        report_mask = 16'b0000000011111111;
+        report_mask <= 16'b0000000011111111;
       end
     endcase
   end
 end
 
 // set polling interval depending on typ_next, full_speed, x_input, VID, PID
-always @(*) begin
+always @(posedge clk) begin
   casez ({typ_next, full_speed, x_input, vid, pid})
     {2'bzz, 1'b0, 1'bz, 16'hzzzz, 16'hzzzz}: begin
-      polling_interval = 8'd10;  // 10ms for low-speed devices
+      polling_interval <= 4'd10;  // 10ms for low-speed devices
     end
     {2'b10, 1'b1, 1'b0, 16'hzzzz, 16'hzzzz}: begin
-      polling_interval = 8'd2;   // 2ms for full-speed mouse
+      polling_interval <= 4'd2;   // 2ms for full-speed mouse
     end
     {2'b01, 1'b1, 1'b0, 16'hzzzz, 16'hzzzz}: begin
-      polling_interval = 8'd1;   // 1ms for full-speed keyboard
+      polling_interval <= 4'd1;   // 1ms for full-speed keyboard
     end
     {2'b11, 1'b1, 1'bz, 16'h2dc8, 16'hzzzz}: begin
-      polling_interval = 8'd2;   // 2ms for 8BitDo
+      polling_interval <= 4'd2;   // 2ms for 8BitDo
     end
     {2'b11, 1'b1, 1'b1, 16'hzzzz, 16'hzzzz}: begin
-      polling_interval = 8'd4;   // 4ms for other Xbox-compatible controllers
+      polling_interval <= 4'd4;   // 4ms for other Xbox-compatible controllers
     end
     default: begin
-      polling_interval = 8'd8;   // 8ms by default
+      polling_interval <= 4'd8;   // 8ms by default
     end
   endcase
 end
 
+// module outputs
 reg [2:0] hat;
 
 always @(*) begin
