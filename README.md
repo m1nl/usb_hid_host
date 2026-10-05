@@ -55,6 +55,7 @@ This redesigned core differs significantly from the [original implementation](ht
 - **External ROM interface** replacing embedded ROM, allowing easier microcode updates
 - **Module interface changes**: separate input/output signals (`usb_dm_i/o`, `usb_dp_i/o`, `usb_oe`), renamed signals (`report` → `full_report`, `key1-4` → `key_0-3`), added `cs`, `busy`, `dbg_hid_regs`
 - **FULL_SPEED parameter** for conditional full-speed support with clock prescaler for low-speed devices
+- **XINPUT_SWAP_AB_XY parameter** swaps A/B and X/Y for all X-Input devices by default; set it to `0` to retain the original mapping. D-Input mappings are unaffected.
 
 ### Microcode and USB protocol
 - **Expanded UKP microcode** with additional enumeration steps:

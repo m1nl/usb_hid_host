@@ -22,7 +22,8 @@ module usb_hid_host_dual #(
   parameter FULL_SPEED = 1,
   parameter MOUSE_SUPPORT = 0,
   parameter DEBUG = 1,  // debug usb_hid_host instance (0 - off, 1 - instance 0, 2 - instance 2)
-  parameter DEBUG_MODE = 0  // debug mode (0 - HID report, 1 - HID registers, 2 - UKP state machine)
+  parameter DEBUG_MODE = 0,  // debug mode (0 - HID report, 1 - HID registers, 2 - UKP state machine)
+  parameter XINPUT_SWAP_AB_XY = 1
 ) (
   input wire clk,
   input wire reset,
@@ -117,7 +118,8 @@ wire full_report_i [0:1];
 wire busy_i        [0:1];
 
 usb_hid_host #(
-  .FULL_SPEED(FULL_SPEED)
+  .FULL_SPEED(FULL_SPEED),
+  .XINPUT_SWAP_AB_XY(XINPUT_SWAP_AB_XY)
 ) usb_hid_host_0 (
   .clk(usb_clk),
   .reset(usb_reset),
@@ -157,7 +159,8 @@ usb_hid_host #(
 );
 
 usb_hid_host #(
-  .FULL_SPEED(FULL_SPEED)
+  .FULL_SPEED(FULL_SPEED),
+  .XINPUT_SWAP_AB_XY(XINPUT_SWAP_AB_XY)
 ) usb_hid_host_1 (
   .clk(usb_clk),
   .reset(usb_reset),

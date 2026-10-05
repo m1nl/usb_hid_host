@@ -23,7 +23,8 @@ module usb_hid_host #(
   parameter FULL_SPEED = 1,
   parameter KEYBOARD_SUPPORT = 1,
   parameter MOUSE_SUPPORT = 1,
-  parameter GAME_SUPPORT = 1
+  parameter GAME_SUPPORT = 1,
+  parameter XINPUT_SWAP_AB_XY = 0  // swap A/B and X/Y for all XInput devices
 ) (
   input wire clk,    // 60MHz clock when FULL_SPEED=1, otherwise 12MHz
   input wire reset,  // reset
@@ -348,7 +349,10 @@ always @(*) begin
       end
       {1'b1, 16'hzzzz, 16'hzzzz}: begin  // Xbox 360 - compatible (X-Input)
         if (dat[0] == 8'h00) begin  // valid pad data
-          {game_y, game_x, game_b, game_a} = dat[3][7:4];  // buttons
+          if (XINPUT_SWAP_AB_XY)
+            {game_x, game_y, game_a, game_b} = dat[3][7:4];  // swap X/Y and A/B
+          else
+            {game_y, game_x, game_b, game_a} = dat[3][7:4];  // buttons
           {game_sel, game_sta} = {dat[2][5], dat[2][4]};   // - +
 
           {game_r, game_l, game_d, game_u} = {dat[2][3:0]};  // d-pad
