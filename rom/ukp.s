@@ -86,6 +86,10 @@ wait_get_config:
     save 5 7               ; interface sub-class
     save 6 0               ; interface protocol
 
+; if the device is unsupported or DFU, go to start to make it timeout
+    load 14
+    bz cstart
+
 ; ---- initialization sequence
     call reset            ; reset device again
 

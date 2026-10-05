@@ -146,6 +146,7 @@ always @(posedge clk) begin
       4'd11: load_data <= out_payload[1];
       4'd12: load_data <= x_input ? 8'b1 : 8'b0;
       4'd13: load_data <= polling_interval;
+      4'd14: load_data <= {7'b0, (typ_next != 0)};  // supported device for enumeration
       default: load_data <= regs[addra[2:0]];
     endcase
   end
