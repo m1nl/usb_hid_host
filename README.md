@@ -163,6 +163,8 @@ All HID events are transmitted in messages, *HID reports* in USB terminology. Fo
 
 ## Keyboard
 
+With `KEYBOARD_SUPPORT=1` and `FORCE_ARDUINO_KEYBOARD=1` (the default), VIDs `2341` (Arduino) and `1b4f` (SparkFun) select an Arduino Keyboard profile for every PID when the captured configuration bytes match the standard CDC association layout (`02/00/00`). This excludes the standard Caterina bootloader layout (`02/02/01`). Set `FORCE_ARDUINO_KEYBOARD=0` to disable this VID override and use ordinary HID handling. This assumes standard AVR firmware with CDC enabled, HID on IN endpoint 4, and a nine-byte report containing ID `2` followed by modifiers, a reserved byte, and six keys. The core skips the report ID and exposes the usual keyboard outputs. This profile assumes Keyboard is the only HID report producer; disabling CDC, adding other USB modules, or using a different board core can change the layout. It has passed focused simulation and an ECP5 build; hardware compatibility has not yet been verified.
+
 USB keyboards transmit *scancodes* instead of ASCII codes. Therefore `key_0`, `key_1`, `key_2`, and `key_3` represent scancodes of the currently pressed keys. The `key_modifiers` output indicates the status of modifier keys like shift, ctrl, etc. If you need to convert the scancodes to ASCII, a simple method is demonstrated in the demo project (which supports up to 2 simultaneously pressed keys and lacks auto-repeat functionality).
 
 If you prefer to do the conversion on your own, you can find scancodes in the "keyboard/Keypad Page" sector of the HID Usage Tables. See [scancode](https://gist.github.com/MightyPork/6da26e382a7ad91b5496ee55fdc73db2)

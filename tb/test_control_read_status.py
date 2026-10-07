@@ -39,19 +39,23 @@ def main():
         with (work / "usb_hid_host_rom.mem").open("a") as output:
             output.write("0\n" * (1024 - len(image)))
         for speed in (1, 0):
-            executable = work / f"status-{speed}"
-            subprocess.run([
-                "iverilog", "-g2012", "-s", "test",
-                f"-Ptest.FULL_SPEED={speed}",
-                f"-Ptest.ENTRY={labels['status_read00']}",
-                f"-Ptest.ERROR={labels['connerr']}",
-                f"-Ptest.RETURN={labels['prgend']}",
-                "-o", str(executable),
-                str(root / "rtl/usb_hid_host.v"),
-                str(root / "rtl/usb_hid_host_rom.v"),
-                str(root / "tb/control_read_status_tb.v"),
-            ], check=True)
-            subprocess.run(["vvp", str(executable)], cwd=work, check=True)
+            for address in (0, 1):
+                executable = work / f"status-{speed}-{address}"
+                subprocess.run([
+                    "iverilog", "-g2012", "-s", "test",
+                    f"-Ptest.FULL_SPEED={speed}",
+                    f"-Ptest.ENTRY={labels[f'status_read{address}0']}",
+                    f"-Ptest.DEVICE_ADDRESS={address}",
+                    f"-Ptest.ERROR={labels['connerr']}",
+                    # Observe this PC before its opcode executes. prgend can be
+                    # 1024, which wraps to zero in the production 10-bit PC.
+                    "-Ptest.RETURN=1023",
+                    "-o", str(executable),
+                    str(root / "rtl/usb_hid_host.v"),
+                    str(root / "rtl/usb_hid_host_rom.v"),
+                    str(root / "tb/control_read_status_tb.v"),
+                ], check=True)
+                subprocess.run(["vvp", str(executable)], cwd=work, check=True)
             executable = work / f"address-recovery-{speed}"
             subprocess.run([
                 "iverilog", "-g2012", "-s", "test",

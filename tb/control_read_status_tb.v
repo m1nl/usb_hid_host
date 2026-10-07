@@ -4,7 +4,7 @@
 // Run with: python3 tb/test_control_read_status.py
 module test;
   parameter FULL_SPEED = 1;
-  parameter ENTRY = 0, ERROR = 0, RETURN = 0;
+  parameter ENTRY = 0, ERROR = 0, RETURN = 0, DEVICE_ADDRESS = 0;
   localparam BIT_CYCLES = FULL_SPEED ? 5 : 8;
 
   reg clk = 0, reset = 1, dp = 1, dm = 0;
@@ -88,7 +88,7 @@ module test;
                 $fatal(1, "Low-speed keep-alive contains data");
             end
             1: begin
-              if (nbytes != 4 || bytes !== 32'h80e10010)
+              if (nbytes != 4 || bytes !== (DEVICE_ADDRESS == 0 ? 32'h80e10010 : 32'h80e101e8))
                 $fatal(1, "Bad OUT status token %h", bytes);
             end
             2: begin
@@ -150,8 +150,8 @@ module test;
           end else if (dut.pc != ERROR || packet != 3) begin
             $fatal(1, "Error handling failure");
           end
-          $display("PASS speed=%0d mode=%0d packets=%0d responses=%0d",
-                   FULL_SPEED, mode, packet, responses);
+          $display("PASS speed=%0d address=%0d mode=%0d packets=%0d responses=%0d",
+                   FULL_SPEED, DEVICE_ADDRESS, mode, packet, responses);
         end
       join_any
       disable scenario;

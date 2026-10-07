@@ -24,7 +24,8 @@ module usb_hid_host #(
   parameter KEYBOARD_SUPPORT = 1,
   parameter MOUSE_SUPPORT = 1,
   parameter GAME_SUPPORT = 1,
-  parameter XINPUT_SWAP_AB_XY = 0  // swap A/B and X/Y for all XInput devices
+  parameter XINPUT_SWAP_AB_XY = 0,  // swap A/B and X/Y for all XInput devices
+  parameter FORCE_ARDUINO_KEYBOARD = 0  // assume CDC + Keyboard for Arduino/SparkFun VIDs
 ) (
   input wire clk,    // 60MHz clock when FULL_SPEED=1, otherwise 12MHz
   input wire reset,  // reset
@@ -125,6 +126,17 @@ reg       connected_r;
 wire [15:0] vid = {regs[1], regs[0]};
 wire [15:0] pid = {regs[3], regs[2]};
 
+// Assume standard AVR CDC + Keyboard firmware for Arduino/SparkFun VIDs.
+// HID uses IN endpoint 4 and report ID 2 followed by an eight-byte key report.
+// The captured CDC IAD bytes distinguish this layout from Caterina's 02/02/01.
+// Sample before endpoint loads, which follow descriptor saving and recovery.
+reg arduino_keyboard;
+always @(posedge clk) begin
+  arduino_keyboard <= FORCE_ARDUINO_KEYBOARD && KEYBOARD_SUPPORT &&
+                      (vid == 16'h2341 || vid == 16'h1b4f) &&
+                      {regs[4], regs[5], regs[6]} == 24'h020000;
+end
+
 assign dbg_hid_report = {dat[7], dat[6], dat[5], dat[4], dat[3], dat[2], dat[1], dat[0]};
 assign dbg_hid_regs   = {regs[7], regs[6], regs[5], regs[4], regs[3], regs[2], regs[1], regs[0]};
 
@@ -220,23 +232,29 @@ always @(posedge clk) begin
   end
 end
 
-// set typ depending on INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL, VID, PID
+// classify by INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL
 reg x_input_i;
 
 always @(*) begin
   typ_next = 0;
   x_input_i  = 0;
 
-  casez ({regs[4], regs[5], regs[6], vid, pid})  // INTERFACE_CLASS, INTERFACE_SUBCLASS, INTERFACE_PROTOCOL, VID, PID
-    {8'h03, 8'h01, 8'h01, 16'hzzzz, 16'hzzzz}: if (KEYBOARD_SUPPORT) typ_next = 1;  // keyboard
-    {8'h03, 8'h01, 8'hzz, 16'hzzzz, 16'hzzzz}: if (MOUSE_SUPPORT)    typ_next = 2;  // mouse
-    {8'h03, 8'hzz, 8'hzz, 16'hzzzz, 16'hzzzz}: if (GAME_SUPPORT)     typ_next = 3;  // other (incl. 8BitDo, D-Input)
-    {8'hff, 8'h5d, 8'h01, 16'hzzzz, 16'hzzzz},
-    {8'hff, 8'h5d, 8'h81, 16'hzzzz, 16'hzzzz}: begin
+  casez ({regs[4], regs[5], regs[6]})
+    {8'h03, 8'h01, 8'h01}: if (KEYBOARD_SUPPORT) typ_next = 1;  // keyboard
+    {8'h03, 8'h01, 8'hzz}: if (MOUSE_SUPPORT)    typ_next = 2;  // mouse
+    {8'h03, 8'hzz, 8'hzz}: if (GAME_SUPPORT)     typ_next = 3;  // other (incl. 8BitDo, D-Input)
+    {8'hff, 8'h5d, 8'h01},
+    {8'hff, 8'h5d, 8'h81}: begin
       if (GAME_SUPPORT) typ_next = 3;
       x_input_i  = 1;
     end  // Xbox 360 (incl. 8BitDo, X-Input); wired - protocol 1, wireless - protocol 129
   endcase
+
+  // The fixed configuration read sees CDC's IAD instead of the HID interface.
+  if (arduino_keyboard) begin
+    typ_next = 1;
+    x_input_i = 0;
+  end
 end
 
 // sample values to improve timing and optimize resource usage
@@ -258,8 +276,8 @@ always @(*) begin
       out_payload[1] = 8'h0a;
     end  // 8BitDo Ultimate 2C
     default: begin
-      in_payload[0] = 8'h81;   // IN endpoint 1 (81 58) - default
-      in_payload[1] = 8'h58;
+      in_payload[0] = arduino_keyboard ? 8'h01 : 8'h81;  // IN endpoint 4 or default 1
+      in_payload[1] = arduino_keyboard ? 8'hba : 8'h58;
 
       out_payload[0] = 8'h01;  // OUT endpoint 2 (01 c1) - default
       out_payload[1] = 8'hc1;
@@ -271,6 +289,9 @@ end
 always @(posedge clk) begin
   if (!connected || reset) begin  // Wrap-around when enumeration didn't finish
       report_mask <= 16'b1111111111111111;
+
+  end else if (arduino_keyboard) begin
+    report_mask <= 16'b0000000111111110;  // skip report ID; pack modifiers/reserved/six keys
 
   end else begin
     casez ({typ_next, x_input, vid, pid})

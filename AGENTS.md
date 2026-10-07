@@ -223,13 +223,10 @@ Separate flags were discussed but not implemented.
 - `address_recovery_tb.v` uses the production frame timer at three initial
   phases for both FULL_SPEED settings. The measured recovery delays were about
   2.004..3.004ms at full speed and 2.012..3.010ms at low speed.
-- IMPORTANT: the current runner needs a test-only correction after the ROM
-  became full. It sets RETURN to `prgend`, which is now `0x400`; the 10-bit PC
-  wraps this sentinel to zero. The current test fails after returning into
-  unrelated code (observed `Bad SOF 00000000`). Prototype status tests passed
-  using an in-range sentinel `1023`, for OUT status at addresses 0 and 1, at
-  both speeds. Do not mistake the runner's sentinel failure for a demonstrated
-  protocol regression. The committed runner currently tests only address 0.
+- The status runner uses in-range return sentinel `1023` and tests OUT status
+  at addresses 0 and 1, at both speeds. Previously it used `prgend=0x400`,
+  which wrapped the 10-bit PC to zero and failed in unrelated code with
+  `Bad SOF 00000000`; that was a test failure rather than a protocol regression.
 - Temporary artifacts: `/tmp/tmk_hid_review/` contains the LUFA reproduction,
   host report test, and focused timing exercises. `/tmp/ukp_rom_refactor/`
   contains measured candidates, `recommended.patch`, `recommended/` with the
@@ -297,3 +294,74 @@ Separate flags were discussed but not implemented.
   state or capture USB traffic to distinguish these cases. Reaching the
   host's 16-byte limit also does not prove the device's entire report is only
   16 bytes long.
+
+## Arduino / SparkFun keyboard profile (2026-10-07)
+
+- The user explicitly requested VID-only recognition for `2341` and `1b4f`,
+  regardless of PID, assuming standard AVR CDC+Keyboard firmware. The shared
+  registered `arduino_keyboard` predicate is gated by `KEYBOARD_SUPPORT` and the
+  default-on `FORCE_ARDUINO_KEYBOARD` parameter and overrides
+  `typ_next=1`, selects IN endpoint 4 (`01 ba`), and chooses mask `01fe`.
+  Enumeration must retain its all-ones mask until connected.
+  It also requires captured configuration bytes `02/00/00` to exclude the
+  standard Caterina bootloader's `02/02/01` layout. This tests the expected
+  CDC association layout; it does not independently establish HID presence.
+- Arduino Keyboard 1.0.7 sends ID 2 plus the ordinary eight-byte key payload.
+  Standard AVR HID advertises `03/00/00`; SET_PROTOCOL only stores a variable
+  and does not strip the report ID. CDC precedes HID, so the fixed 18-byte
+  configuration read captures `02/00/00` from the IAD. The VID override bypasses
+  that classification failure without a configuration scanner or ROM changes.
+- Standard HID is interface 2 / IN endpoint 4 with CDC enabled and no earlier
+  pluggable modules. Current optional HID requests still address interface 0;
+  their STALLs are skipped under the existing policy. Keyboard reports do not
+  require those optional requests to succeed.
+- This assumes Keyboard is the only HID report producer. It is not generic
+  detection for all firmware sharing those VIDs, does not filter report IDs,
+  and does not cover CDC-disabled or rearranged composite layouts.
+- `python3 tb/test_arduino_keyboard.py` checks both VIDs with multiple PIDs,
+  support disabled, descriptor capture/acceptance, endpoint/masks, first and
+  subsequent reports, six keys/modifiers/releases and CRC exclusion, plus a
+  nonmatching boot keyboard control. It bypasses UKP/PHY. Status/recovery tests
+  and lint at both speeds pass; hardware compatibility remains untested.
+  The runner also tests all combinations of keyboard support and force flag,
+  including ordinary boot reports on an Arduino VID with forcing disabled.
+- Current IcePi Zero Makefile (`-abc9`) builds in temporary copies measured
+  packed TRELLIS_COMB sites 812 -> 831 and FFs 347 -> 348; one EBR/PLL retained.
+  Both completed ecppack, final timing estimates 64.71 -> 64.96 MHz at 60 MHz.
+  Artifacts: `/tmp/promicro_vid_profile/`; details: `doc/promicro-keyboard-review.md`.
+- Packing the profile into existing `casez` blocks was measured with the same
+  top/flags: direct VID entries cost 884 packed sites, and a shared predicate
+  added to case selectors cost 866, versus 831 for the selected separate
+  override/conditional-mask arrangement. All used 348 FFs. Keep the selected
+  arrangement for LUT area under this mapping. Both alternatives passed
+  focused keyboard tests; the shared-predicate case form passed all 764 Yosys
+  equivalence points at FULL_SPEED=1.
+- Registering IN/OUT payloads after the Arduino profile still increased area
+  under the current `-abc9` recipe (Yosys 0.69 / nextpnr 0.11.1): combinational
+  831 sites/348 FFs; IN registered 882/350; OUT registered 850/350; both 895/352.
+  All built through ecppack and passed focused keyboard tests. Combined variant
+  lint passed at both speeds. Keep payloads combinational for the measured area
+  target. Artifacts: `/tmp/usb_payload_register_review/`; no formal or hardware
+  equivalence claim for these one-cycle-latency experiments.
+- After adding `FORCE_ARDUINO_KEYBOARD`, a fresh current-source area comparison
+  measured VID-only profile 857 packed sites/348 FFs versus 861/348 when also
+  requiring captured config bytes `02/00/00` (+4 sites). This can reject the
+  standard Caterina CDC interface tuple `02/02/01`, but does not prove HID is
+  present. That initial guard was experimental; the registered version below
+  is now applied. Both builds completed
+  ecppack; artifacts: `/tmp/arduino_descriptor_guard/`.
+- Registering the guarded `arduino_keyboard` predicate saves area: guarded
+  combinational 861 sites/348 FFs versus registered 823/349. Both completed
+  ecppack; final timing 64.35/64.28 MHz. Selected registered version is applied,
+  with no separate reset (it follows cleared descriptor registers next clock).
+  Payloads remain combinational and ROM is unchanged. Focused tests now cover
+  Caterina prefix rejection followed by application prefix/report acceptance
+  on both VIDs; this bypasses PHY and does not validate physical reconnect.
+  Artifacts: `/tmp/arduino_keyboard_register/`.
+- User supplied NicoHood HID-Project 2.8.4 in untracked `hid/` and confirmed
+  using its `Keyboard` API (not BootKeyboard). Its multi-report Keyboard has
+  default ID 2 plus the same eight-byte key payload, using the AVR core HID
+  transport. Current profile matches when CDC is enabled and Keyboard is the
+  only HID producer, with no earlier pluggable modules. No extra RTL change
+  was needed. HID-Project BootKeyboard has no report ID and fails the `01fe`
+  mask; NKRO APIs use bitmaps and are unsupported. See the persistent review.
