@@ -40,24 +40,13 @@ w200ms:
     call reset            ; reset device
 
 ; GET_DESCRIPTOR (Device, 0)
-    wait
-    call sof
-    call setup00
+    call setup_frame00
     call get_device
-    call rcvdt
     ldi 128               ; receive 16 bytes of data from device
     start                 ; mark start of read transaction
 
 ; IN(0,0), ACK(), device descriptor
-wait_get_device:
-    wait
-    call sof
-    call in00
-    call rcvdt2
-    bnak wait_get_device
-    bstall connerr
-    call sendack
-    bnz wait_get_device
+    call read_control00
 ; the buffer wraps, start reading from byte 8
     save 0 0              ; idVendor lsb
     save 1 1              ; idVendor msb
@@ -66,24 +55,13 @@ wait_get_device:
     call status_read00    ; complete control read after saving descriptor bytes
 
 ; GET_DESCRIPTOR (Configuration, 0)
-    wait
-    call sof
-    call setup00
+    call setup_frame00
     call get_config
-    call rcvdt
     ldi 144               ; receive up to 18 bytes of data from device
     start                 ; mark start of read transaction
 
 ; IN(0,0), ACK(), configuration descriptor
-wait_get_config:
-    wait
-    call sof
-    call in00
-    call rcvdt2
-    bnak wait_get_config
-    bstall connerr
-    call sendack
-    bnz wait_get_config
+    call read_control00
 ; the buffer wraps, start reading from byte 14
     save 4 6               ; interface class
     save 5 7               ; interface sub-class
@@ -98,133 +76,96 @@ wait_get_config:
     call reset            ; reset device again
 
 ; SET_ADDRESS (0, 1)
-    wait
-    call sof
-    call setup00
+    call setup_frame00
     call set_address
-    call rcvdt
 
 ; IN(0,0), ACK()
 wait_set_address:
-    wait
-    call sof
+    call frame
     call in00
     call rcvdt
     bnak wait_set_address
     call sendack
 
+; SET_ADDRESS recovery: the first wait may cover only a partial frame.
+; Together with SET_CONFIGURATION's wait below, cross three frame boundaries
+; to allow at least 2ms after the status ACK, maintaining SOF/keep-alive traffic.
+address_recovery:
+    call frame
+    call frame
+
 ; SET_CONFIGURATION (1, 1)
-    wait
-    call sof
-    call setup10
+    call setup_frame10
     call set_config
-    call rcvdt
 
 ; IN(1,0), ACK()
-wait_set_config:
-    wait
-    call sof
-    call in10
-    call rcvdt
-    bnak wait_set_config
-    call sendack
+    ldi 64
+    call control_in10
+    bstall connerr        ; mandatory configuration request
 
 ; skip HID initialization for Xbox 360-compatbile controllers
     load 12
     bnz xinput_init
 
 ; SET_IDLE (1, 0)
-    wait
-    call sof
-    call setup10
+    call setup_frame10
     call set_idle
-    call rcvdt
 
 ; IN(1,0), ACK()
-wait_set_idle:
-    wait
-    call sof
-    call in10
-    call rcvdt
-    bstall set_idle_ready
-    bnak wait_set_idle
-    call sendack
-set_idle_ready:
+    ldi 64
+    call control_in10
 
-; Disabled for now: the report descriptor is unused by the fixed decoders.
-; Restoring this read also requires an OUT status stage at address 1.
+
+; Read the first nine report-descriptor bytes; contents remain unused.
 ; GET_DESCRIPTOR (HID, 1, 0)
-;    wait
-;    call sof
-;    call setup10
-;    call get_hid_report
-;    call rcvdt
-;    ldi 72                ; receive 9 bytes of data from device
-;    start                 ; mark start of read transaction
+    call setup_frame10
+    call get_hid_report
+    ldi 72                ; receive 9 bytes of data from device
+    start                 ; mark start of read transaction
 ;
 ; IN(1,0), ACK() - read but ignore contents
-;wait_get_hid_report:
-;    wait
-;    call sof
-;    call in10
-;    call rcvdt2
-;    bstall get_hid_report_ready
-;    bnak wait_get_hid_report
-;    call sendack
-;    bnz wait_get_hid_report
-;get_hid_report_ready:
+read_get_hid_report:
+    call control_in10
+    bstall get_hid_report_ready
+    bnz read_get_hid_report
+    call status_read10
+get_hid_report_ready:
+
 
 ; SET_PROTOCOL (1, 0)
-    wait
-    call sof
-    call setup10
+    call setup_frame10
     call set_protocol
-    call rcvdt
 
 ; IN(1,0), ACK()
-wait_set_protocol:
-    wait
-    call sof
-    call in10
-    call rcvdt
-    bstall set_protocol_ready
-    bnak wait_set_protocol
-    call sendack
-set_protocol_ready:
+    ldi 64
+    call control_in10
+
     bjmp init_finished
 
 xinput_init:
 ; huge thanks to Jakob
 ; ref: https://jakob.space/blog/sorry-guys-i-have-to-troubleshoot-my-usb-drivers-before-i-can-play.html
 ; XINPUT_LED (1)
-    wait
-    call sof
+    call frame
     call out1x
     call xinput_led
-    call rcvdt
 
 ; some third-party controllers Xbox 360-style controllers
 ; require this message to finish initialization
 ; ref: linux/drivers/input/joystick/xpad.c
 ; XINPUT_INIT (1)
-    wait
-    call sof
-    call setup10
+    call setup_frame10
     call xinput_magic
-    call rcvdt
     ldi 160               ; receive 20 bytes of data from device
     start                 ; mark start of read transaction
 
 ; IN(1,0), ACK() - read but ignore contents
-wait_xinput_magic:
-    wait
-    call sof
-    call in10
-    call rcvdt2
+read_xinput_magic:
+    call control_in10
     bstall xinput_magic_ready
-    bnak wait_xinput_magic
-    call sendack
-    bnz wait_xinput_magic
+    bnz read_xinput_magic
+
+
 xinput_magic_ready:
 
 ; ---- initialization finished
@@ -265,8 +206,7 @@ loop_reset:
 ; ---- wait 40ms
     ldi 40
 w40ms:
-    wait
-    call sof
+    call frame
     dec
     bnz w40ms
     ret
@@ -275,25 +215,30 @@ w40ms:
 ; Descriptor bytes must be saved first: receiving can change the report buffer.
 ; Keep calls at most two deep, matching the UKP return stack.
 status_read00:
-    wait
-    call sof
+    call frame
     outb 0x80             ; SYNC
     outb 0xe1             ; PID=OUT
     outb 0x00             ; ADDR:ENDP=0:0
     outb 0x10             ; + CRC5
     out4 0x03             ; EOP
     hiz
-    outb 0x80             ; SYNC
-    outb 0x4b             ; PID=DATA1, zero-length payload
-    outb 0x00             ; CRC16 of empty payload
-    outb 0x00
-    out4 0x03             ; EOP
-    hiz
-    call rcvdt            ; ACK completes the transfer
+    call status_zlp
     bnak status_read00    ; busy: retry the same DATA1 status transaction
     bstall connerr        ; STALL or receive timeout: restart enumeration
     ret
 
+status_read10:
+    call frame
+    outb 0x80             ; SYNC
+    outb 0xe1             ; PID=OUT
+    outb 0x01             ; ADDR:ENDP=1:0
+    outb 0xe8             ; + CRC5
+    out4 0x03             ; EOP
+    hiz
+    call status_zlp
+    bnak status_read10    ; busy: retry the same DATA1 status transaction
+    bstall connerr        ; STALL or receive timeout: restart enumeration
+    ret
 get_device:               ; get device descriptor of (0,0)
     outb 0x80             ; SYNC
     outb 0xc3             ; PID=DATA0
@@ -309,7 +254,7 @@ get_device:               ; get device descriptor of (0,0)
     outb 0x94
     out4 0x03             ; EOP
     hiz
-    ret
+    bjmp rcvdt
 
 get_config:               ; get config descriptor of (0,0)
     outb 0x80             ; SYNC
@@ -326,7 +271,7 @@ get_config:               ; get config descriptor of (0,0)
     outb 0xf4
     out4 0x03             ; EOP
     hiz
-    ret
+    bjmp rcvdt
 
 set_address:              ; set address of device 0 to 1
     outb 0x80
@@ -343,7 +288,7 @@ set_address:              ; set address of device 0 to 1
     outb 0x25
     out4 0x03
     hiz
-    ret
+    bjmp rcvdt
 
 set_config:               ; set active configuration of device 1 to 1 (default config)
     outb 0x80
@@ -360,7 +305,7 @@ set_config:               ; set active configuration of device 1 to 1 (default c
     outb 0x25
     out4 0x03
     hiz
-    ret
+    bjmp rcvdt
 
 set_idle:
     outb 0x80             ; SYNC
@@ -377,7 +322,7 @@ set_idle:
     outb 0x20
     out4 0x03             ; EOP
     hiz
-    ret
+    bjmp rcvdt
 
 set_protocol:
     outb 0x80             ; SYNC
@@ -394,24 +339,24 @@ set_protocol:
     outb 0xe0
     out4 0x03             ; EOP
     hiz
-    ret
+    bjmp rcvdt
 
-;get_hid_report:
-;    outb 0x80             ; SYNC
-;    outb 0xc3             ; PID=DATA0
-;    outb 0x81             ; bmRequestType=81
-;    outb 0x06             ; bRequest=6 (Get_Descriptor)
-;    outb 0x00             ; Desc Index=0
-;    outb 0x22             ; Desc Type=22 HID
-;    outb 0x00             ; wInterfaceNumber=0
-;    outb 0x00
-;    outb 0x09             ; wLength=9
-;    outb 0x00
-;    outb 0xee             ; CRC16
-;    outb 0x0f
-;    out4 0x03             ; EOP
-;    hiz
-;    ret
+get_hid_report:
+    outb 0x80             ; SYNC
+    outb 0xc3             ; PID=DATA0
+    outb 0x81             ; bmRequestType=81
+    outb 0x06             ; bRequest=6 (Get_Descriptor)
+    outb 0x00             ; Desc Index=0
+    outb 0x22             ; Desc Type=22 HID
+    outb 0x00             ; wInterfaceNumber=0
+    outb 0x00
+    outb 0x09             ; wLength=9
+    outb 0x00
+    outb 0xee             ; CRC16
+    outb 0x0f
+    out4 0x03             ; EOP
+    hiz
+    bjmp rcvdt
 
 xinput_led:
     outb 0x80             ; SYNC
@@ -423,7 +368,7 @@ xinput_led:
     outb 0xce
     out4 0x03             ; EOP
     hiz
-    ret
+    bjmp rcvdt
 
 xinput_magic:
     outb 0x80             ; SYNC
@@ -440,7 +385,7 @@ xinput_magic:
     outb 0x68
     out4 0x03             ; EOP
     hiz
-    ret
+    bjmp rcvdt
 
 rcvdt:
     ldi 64                ; receive up to 8 bytes of data from device by default
@@ -524,5 +469,50 @@ keep_alive:
     out4 0x03             ; low-speed keep-alive
     hiz
     ret
+
+control_in10:
+    call frame
+    call in10
+    call rcvdt2
+    bnak control_in10
+    bstall control_in10_ready
+    call sendack
+control_in10_ready:
+    ret
+
+read_control00:
+    call frame
+    call in00
+    call rcvdt2
+    bnak read_control00
+    bstall connerr
+    call sendack
+    bnz read_control00
+    ret
+
+; Shared control-read status data packet, following an OUT token to endpoint 0.
+; The caller checks the handshake flags for ACK, NAK retry, or STALL/timeout.
+status_zlp:
+    outb 0x80             ; SYNC
+    outb 0x4b             ; PID=DATA1, zero-length payload
+    outb 0x00             ; CRC16 of empty payload, low byte
+    outb 0x00             ; CRC16 high byte
+    out4 0x03             ; EOP
+    hiz                   ; release bus for the device handshake
+    bjmp rcvdt            ; receive handshake; tail jump preserves return stack
+
+setup_frame00:
+    call frame
+    call setup00
+    ret
+
+setup_frame10:
+    call frame
+    call setup10
+    ret
+
+frame:
+    wait
+    bjmp sof
 
 prgend:
