@@ -20,13 +20,13 @@ all: debug
 build: $(OUTPUT).bit
 
 debug: build
-	openFPGALoader -cft231X --pins=7:3:5:6 $(OUTPUT).bit
+	openFPGALoader -b icepi-zero $(OUTPUT).bit
 
 install: build
-	openFPGALoader -cft231X --pins=7:3:5:6 $(OUTPUT).bit --write-flash
+	openFPGALoader -b icepi-zero $(OUTPUT).bit --write-flash
 
 install-bitstream:
-	openFPGALoader -cft231X --pins=7:3:5:6 $(OUTPUT).bit --write-flash
+	openFPGALoader -b icepi-zero $(OUTPUT).bit --write-flash
 
 lint:
 	verilator --lint-only -Wall -Wno-DECLFILENAME -Wno-WIDTHEXPAND $(VERILOG_SOURCES)
