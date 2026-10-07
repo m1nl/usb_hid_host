@@ -257,3 +257,43 @@ Separate flags were discussed but not implemented.
 - USB reference sections: 8.4.6.4 (SETUP response), 8.5.3/8.5.3.1 (control
   status), 8.5.3.2 (short packets), 8.6 (toggles), 9.2.6.2/3 (reset/address
   recovery), and 7.1.18.1 (inter-packet delay) in the USB 2.0 specification.
+
+## UKP receive bit-stuffing regression fix (2026-10-07)
+
+- The user reproduced random `game_u` / `game_d` activation during small
+  horizontal analog-stick movements on an 8BitDo Pro 3. Larger deflections
+  behaved reliably. After applying the fix below, the user confirmed on
+  hardware that bit stuffing was the cause and the symptom was resolved.
+- In UKP's sampling block in `rtl/usb_hid_host.v`, a stuffed bit is discarded
+  when `nrzrxct == 6`, holding `bitaddr` and the receive shift register. The old
+  byte-strobe condition checked only `ukprdy` and `bitaddr[2:0] == 0`. If the
+  stuffed bit fell immediately after a byte boundary, it strobed the completed
+  byte on both the stuffed bit and the following data bit. This duplicated a
+  byte, shifted report offsets, and could corrupt the packed axis mapping.
+- The active fix requires `nrzrxct != 6` in the byte-strobe condition as well:
+  `if (ukprdy && nrzrxct != 6 && bitaddr[2:0] == 3'b000)`.
+  Preserve this guard when changing receive logic. Test stuffing at byte
+  boundaries, not just stuffing within a byte. This defect can affect full
+  packets; it does not require CRC bytes to enter the report buffer.
+- A focused Icarus reproduction showed two strobes for one completed byte
+  before the fix and one afterward. A 16-byte stream containing six stuffed
+  bits passed byte-for-byte checks with both FULL_SPEED parameter settings;
+  the original RTL failed at byte 8, duplicating byte 7 (`fc`) instead of
+  receiving byte 8 (`80`). These tests forced internal sample/NRZI signals,
+  bypassing the line filters, clock recovery, and production timing.
+- Host RTL lint passed for both FULL_SPEED settings, and a temporary copy of
+  the IcePi Zero example built through Yosys, nextpnr, and ecppack. Artifacts
+  are in `/tmp/usb_stuff_boundary/`; they are temporary, not committed tests.
+- The board example's added direction latch was repaired by declaring
+  `game_l_r`, `game_r_r`, `game_u_r`, and `game_d_r` (rather than redeclaring
+  the host output wires), resetting them, and sampling on `full_report`.
+  The temporary `|dat[6]` LED checks were replaced by the original signed
+  Y-axis threshold expressions. The user's XInput report mask `16'h02bd`
+  packs original offsets 0/2/3/4/5/7/9 into `dat[0]` through `dat[6]`, so
+  `dat[5]` / `dat[6]` hold left-stick X/Y high bytes.
+- A strobe count alone does not always establish payload length: 16 strobes
+  can represent 16 payload bytes with CRC strobes suppressed at the receive
+  limit, or 14 payload bytes plus two strobed CRC bytes. Consult receive-limit
+  state or capture USB traffic to distinguish these cases. Reaching the
+  host's 16-byte limit also does not prove the device's entire report is only
+  16 bytes long.

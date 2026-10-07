@@ -277,6 +277,9 @@ always @(posedge clk) begin
       {2'b11, 1'b0, 16'h2dc8, 16'h9020}: begin  // 8BitDo Micro in D-Input mode
         report_mask <= 16'b0000001100000010;
       end
+      {2'b11, 1'b1, 16'hzzzz, 16'hzzzz}: begin  // X-Input
+        report_mask <= 16'b0000001010111101;
+      end
       default: begin                            // By default assume only 8 bytes in HID report
         report_mask <= 16'b0000000011111111;
       end
@@ -361,15 +364,21 @@ always @(*) begin
       {1'b1, 16'hzzzz, 16'hzzzz}: begin  // Xbox 360 - compatible (X-Input)
         if (dat[0] == 8'h00) begin  // valid pad data
           if (XINPUT_SWAP_AB_XY)
-            {game_x, game_y, game_a, game_b} = dat[3][7:4];  // swap X/Y and A/B
+            {game_x, game_y, game_a, game_b} = dat[2][7:4];  // swap X/Y and A/B
           else
-            {game_y, game_x, game_b, game_a} = dat[3][7:4];  // buttons
-          {game_sel, game_sta} = {dat[2][5], dat[2][4]};   // - +
+            {game_y, game_x, game_b, game_a} = dat[2][7:4];  // buttons
+          {game_sel, game_sta} = {dat[1][5], dat[1][4]};   // - +
 
-          {game_r, game_l, game_d, game_u} = {dat[2][3:0]};  // d-pad
+          {game_r, game_l, game_d, game_u} = {dat[1][3:0]};  // d-pad
+
+          // map analog stick as d-pad
+          game_r = game_r || (dat[5][7] == 1'b0 &&  |dat[5][6:5]);
+          game_l = game_l || (dat[5][7] == 1'b1 && ~&dat[5][6:5]);
+          game_u = game_u || (dat[6][7] == 1'b0 &&  |dat[6][6:5]);
+          game_d = game_d || (dat[6][7] == 1'b1 && ~&dat[6][6:5]);
 
           // l2, l1, r2, r1
-          game_extra = {(|dat[4]), dat[3][0], (|dat[5]), dat[3][1]};
+          game_extra = {(|dat[3]), dat[2][0], (|dat[4]), dat[2][1]};
         end
       end
       {1'b0, 16'h0738, 16'h2217}: begin  // SpeedLink COMPETITION PRO Extra
@@ -912,7 +921,8 @@ always @(posedge clk) begin
         nrzrxct <= nrzrxct + 1;
       else
         nrzrxct <= 0;
-      if (ukprdy && bitaddr[2:0] == 3'b000) begin  // strobe whenever we have a full byte ready
+      // A stuffed bit holds bitaddr; defer the byte strobe to the next data bit.
+      if (ukprdy && nrzrxct != 6 && bitaddr[2:0] == 3'b000) begin
         ukpdat <= data;
         if (wk >= 15)  // ignore last two bytes (CRC of last part-packet)
           ukpstb <= 1;
