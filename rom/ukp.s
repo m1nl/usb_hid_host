@@ -55,6 +55,7 @@ wait_get_device:
     call in00
     call rcvdt2
     bnak wait_get_device
+    bstall connerr
     call sendack
     bnz wait_get_device
 ; the buffer wraps, start reading from byte 8
@@ -62,6 +63,7 @@ wait_get_device:
     save 1 1              ; idVendor msb
     save 2 2              ; idProduct lsb
     save 3 3              ; idProduct msb
+    call status_read00    ; complete control read after saving descriptor bytes
 
 ; GET_DESCRIPTOR (Configuration, 0)
     wait
@@ -79,12 +81,14 @@ wait_get_config:
     call in00
     call rcvdt2
     bnak wait_get_config
+    bstall connerr
     call sendack
     bnz wait_get_config
 ; the buffer wraps, start reading from byte 14
     save 4 6               ; interface class
     save 5 7               ; interface sub-class
     save 6 0               ; interface protocol
+    call status_read00    ; complete control read before the next reset/request
 
 ; if the device is unsupported or DFU, go to start to make it timeout
     load 14
@@ -147,26 +151,28 @@ wait_set_idle:
     call sendack
 set_idle_ready:
 
+; Disabled for now: the report descriptor is unused by the fixed decoders.
+; Restoring this read also requires an OUT status stage at address 1.
 ; GET_DESCRIPTOR (HID, 1, 0)
-    wait
-    call sof
-    call setup10
-    call get_hid_report
-    call rcvdt
-    ldi 72                ; receive 9 bytes of data from device
-    start                 ; mark start of read transaction
-
+;    wait
+;    call sof
+;    call setup10
+;    call get_hid_report
+;    call rcvdt
+;    ldi 72                ; receive 9 bytes of data from device
+;    start                 ; mark start of read transaction
+;
 ; IN(1,0), ACK() - read but ignore contents
-wait_get_hid_report:
-    wait
-    call sof
-    call in10
-    call rcvdt2
-    bstall get_hid_report_ready
-    bnak wait_get_hid_report
-    call sendack
-    bnz wait_get_hid_report
-get_hid_report_ready:
+;wait_get_hid_report:
+;    wait
+;    call sof
+;    call in10
+;    call rcvdt2
+;    bstall get_hid_report_ready
+;    bnak wait_get_hid_report
+;    call sendack
+;    bnz wait_get_hid_report
+;get_hid_report_ready:
 
 ; SET_PROTOCOL (1, 0)
     wait
@@ -263,6 +269,29 @@ w40ms:
     call sof
     dec
     bnz w40ms
+    ret
+
+; OUT status stage for control reads made before SET_ADDRESS.
+; Descriptor bytes must be saved first: receiving can change the report buffer.
+; Keep calls at most two deep, matching the UKP return stack.
+status_read00:
+    wait
+    call sof
+    outb 0x80             ; SYNC
+    outb 0xe1             ; PID=OUT
+    outb 0x00             ; ADDR:ENDP=0:0
+    outb 0x10             ; + CRC5
+    out4 0x03             ; EOP
+    hiz
+    outb 0x80             ; SYNC
+    outb 0x4b             ; PID=DATA1, zero-length payload
+    outb 0x00             ; CRC16 of empty payload
+    outb 0x00
+    out4 0x03             ; EOP
+    hiz
+    call rcvdt            ; ACK completes the transfer
+    bnak status_read00    ; busy: retry the same DATA1 status transaction
+    bstall connerr        ; STALL or receive timeout: restart enumeration
     ret
 
 get_device:               ; get device descriptor of (0,0)
@@ -367,22 +396,22 @@ set_protocol:
     hiz
     ret
 
-get_hid_report:
-    outb 0x80             ; SYNC
-    outb 0xc3             ; PID=DATA0
-    outb 0x81             ; bmRequestType=81
-    outb 0x06             ; bRequest=6 (Get_Descriptor)
-    outb 0x00             ; Desc Index=0
-    outb 0x22             ; Desc Type=22 HID
-    outb 0x00             ; wInterfaceNumber=0
-    outb 0x00
-    outb 0x09             ; wLength=9
-    outb 0x00
-    outb 0xee             ; CRC16
-    outb 0x0f
-    out4 0x03             ; EOP
-    hiz
-    ret
+;get_hid_report:
+;    outb 0x80             ; SYNC
+;    outb 0xc3             ; PID=DATA0
+;    outb 0x81             ; bmRequestType=81
+;    outb 0x06             ; bRequest=6 (Get_Descriptor)
+;    outb 0x00             ; Desc Index=0
+;    outb 0x22             ; Desc Type=22 HID
+;    outb 0x00             ; wInterfaceNumber=0
+;    outb 0x00
+;    outb 0x09             ; wLength=9
+;    outb 0x00
+;    outb 0xee             ; CRC16
+;    outb 0x0f
+;    out4 0x03             ; EOP
+;    hiz
+;    ret
 
 xinput_led:
     outb 0x80             ; SYNC
