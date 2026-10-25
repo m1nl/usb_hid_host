@@ -12,6 +12,8 @@ This is based on the USB-HID work in:
 
 Huge thanks to the authors.
 
+Thanks also to [@nitinseshadri](https://github.com/nitinseshadri) for researching the 8BitDo Micro's HID report layout in D-Input mode and investigating the report-length issue. Those findings informed the support added here.
+
 ## Tested devices
 
 Working:
@@ -74,6 +76,7 @@ This redesigned core differs significantly from the [original implementation](ht
 - **VID/PID-based HID report mapping** for improved gamepad compatibility:
   - 8BitDo controllers in X-Input mode: D-pad and button mappings
   - 8BitDo controllers in D-Input mode (VID 0x2dc8): custom HAT switch decoding, shoulder button mapping
+  - 8BitDo Micro in D-Input mode (VID/PID 0x2dc8:0x9020): D-pad and button mapping, with selected bytes packed from reports longer than eight bytes
   - VID/PID-specific IN/OUT endpoint payload selection (e.g., 8BitDo Ultimate 2C uses endpoint 4/5 vs default 1/2)
   - Speedlink Competition PRO (VID 0x040b, 0x0738): joystick position interpretation
   - Generic fallback for standard gamepad layouts
